@@ -1,0 +1,68 @@
+package com.helloagents.llm;
+
+import java.util.List;
+import java.util.function.Consumer;
+
+/**
+ * Unified interface for LLM API calls.
+ * All agent implementations must use this interface — no direct HTTP calls in business code.
+ *
+ * <p>Quick construction:
+ * <pre>
+ *   // from explicit parameters
+ *   LlmClient client = LlmClient.of(apiKey, baseUrl, model);
+ *
+ *   // from environment variables (LLM_API_KEY, LLM_BASE_URL, LLM_MODEL)
+ *   LlmClient client = LlmClient.fromEnv();
+ * </pre>
+ */
+public interface LlmClient {
+
+    /**
+     * Send a list of messages and return the complete assistant reply (blocking).
+     *
+     * @param messages conversation history
+     * @return assistant reply text
+     */
+    String chat(List<Message> messages);
+
+    /** Convenience overload for a single user message. */
+    default String chat(String userMessage) {
+        return chat(List.of(Message.user(userMessage)));
+    }
+
+    /**
+     * Send a list of messages and deliver the reply token-by-token via {@code onToken}.
+     * The default implementation calls {@link #chat} and emits the full reply as one token.
+     *
+     * @param messages conversation history
+     * @param onToken  callback invoked for each text token as it arrives
+     */
+    default void stream(List<Message> messages, Consumer<String> onToken) {
+        onToken.accept(chat(messages));
+    }
+
+    /** Convenience overload for a single user message. */
+    default void stream(String userMessage, Consumer<String> onToken) {
+        stream(List.of(Message.user(userMessage)), onToken);
+    }
+
+    /**
+     * Create a client with explicit parameters.
+     *
+     * @param apiKey  API key (required)
+     * @param baseUrl API base URL, e.g. {@code https://api.openai.com/v1} (null = default)
+     * @param model   model name, e.g. {@code gpt-4o} (null = default)
+     */
+    static LlmClient of(String apiKey, String baseUrl, String model) {
+        return new OpenAiClient(apiKey, baseUrl, model);
+    }
+
+    /**
+     * Create a client from environment variables:
+     * {@code LLM_API_KEY}, {@code LLM_BASE_URL}, {@code LLM_MODEL}.
+     */
+    static LlmClient fromEnv() {
+        return OpenAiClient.fromEnv();
+    }
+}
