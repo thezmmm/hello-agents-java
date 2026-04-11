@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
  *   <li>Action — tool call in the form {@code Action: tool_name[input]}</li>
  *   <li>Observation — result of executing the tool</li>
  * </ol>
- * The loop continues until the LLM emits {@code Final Answer: ...}.
+ * The loop continues until the LLM emits {@code Action: Finish[]}, with the final answer in the Thought.
  */
 public class ReActAgent implements BaseAgent {
 
@@ -36,8 +36,8 @@ public class ReActAgent implements BaseAgent {
             Action: <tool_name>[<input>]
 
             When you have enough information to answer the user, respond with:
-            Thought: I now have the final answer.
-            Final Answer: <your answer>
+            Thought: <your final answer>
+            Action: Finish
 
             Available tools:
             %s
@@ -45,8 +45,10 @@ public class ReActAgent implements BaseAgent {
 
     private static final Pattern ACTION_PATTERN =
             Pattern.compile("Action:\\s*(\\w+)\\[(.*)\\]", Pattern.DOTALL);
-    private static final Pattern FINAL_ANSWER_PATTERN =
-            Pattern.compile("Final Answer:\\s*(.+)", Pattern.DOTALL);
+    private static final Pattern FINISH_PATTERN =
+            Pattern.compile("Action:\\s*Finish\\s*$", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
+    private static final Pattern THOUGHT_PATTERN =
+            Pattern.compile("Thought:\\s*(.+?)(?=\\nAction:|$)", Pattern.DOTALL);
 
     private final LlmClient llm;
     private final ToolRegistry tools;
@@ -64,9 +66,9 @@ public class ReActAgent implements BaseAgent {
             String response = llm.chat(history);
             history.add(Message.assistant(response));
 
-            Matcher finalMatcher = FINAL_ANSWER_PATTERN.matcher(response);
-            if (finalMatcher.find()) {
-                return finalMatcher.group(1).strip();
+            if (FINISH_PATTERN.matcher(response).find()) {
+                Matcher thoughtMatcher = THOUGHT_PATTERN.matcher(response);
+                return thoughtMatcher.find() ? thoughtMatcher.group(1).strip() : response;
             }
 
             Matcher actionMatcher = ACTION_PATTERN.matcher(response);
@@ -98,8 +100,7 @@ public class ReActAgent implements BaseAgent {
             String response = buf.toString();
             history.add(Message.assistant(response));
 
-            Matcher finalMatcher = FINAL_ANSWER_PATTERN.matcher(response);
-            if (finalMatcher.find()) {
+            if (FINISH_PATTERN.matcher(response).find()) {
                 return;
             }
 
