@@ -12,6 +12,16 @@ public interface Tool {
     String description();
 
     /**
+     * Returns the parameter schema for this tool.
+     * Override to declare all accepted parameters for richer prompt generation.
+     *
+     * @return a {@link ToolParameter} holding all parameter definitions; empty by default
+     */
+    default ToolParameter parameters() {
+        return ToolParameter.empty();
+    }
+
+    /**
      * Execute the tool with the given input string.
      *
      * @param input raw input from the LLM

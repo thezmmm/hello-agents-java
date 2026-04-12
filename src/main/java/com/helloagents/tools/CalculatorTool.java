@@ -1,7 +1,5 @@
 package com.helloagents.tools;
 
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 
 /**
  * Simple calculator tool — evaluates a mathematical expression string.
@@ -18,6 +16,13 @@ public class CalculatorTool implements Tool {
     @Override
     public String description() {
         return "Evaluate a mathematical expression. Input: a math expression string, e.g. (3 + 5) * 2";
+    }
+
+    @Override
+    public ToolParameter parameters() {
+        return ToolParameter.of(
+            ToolParameter.Param.required("expression", "Mathematical expression to evaluate, e.g. (3 + 5) * 2", "string")
+        );
     }
 
     @Override

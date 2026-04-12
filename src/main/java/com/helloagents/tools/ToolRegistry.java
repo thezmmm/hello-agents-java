@@ -67,10 +67,15 @@ public class ToolRegistry {
         return calls;
     }
 
-    /** Returns a formatted list of tool names and descriptions for the system prompt. */
+    /** Returns a formatted list of tool names, descriptions, and parameters for the system prompt. */
     public String describe() {
         return tools.values().stream()
-                .map(t -> "- %s: %s".formatted(t.name(), t.description()))
+                .map(t -> {
+                    String header = "- %s: %s".formatted(t.name(), t.description());
+                    ToolParameter params = t.parameters();
+                    if (params.isEmpty()) return header;
+                    return header + "\n" + params.describe();
+                })
                 .collect(Collectors.joining("\n"));
     }
 }
