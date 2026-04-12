@@ -30,10 +30,10 @@ import java.util.stream.Collectors;
 public class OpenAiClient implements LlmClient {
 
     private final OpenAIClient client;
-    private final String model;
+    private final LlmConfig config;
 
     public OpenAiClient(LlmConfig config) {
-        this.model = config.model();
+        this.config = config;
         this.client = OpenAIOkHttpClient.builder()
                 .apiKey(config.apiKey())
                 .baseUrl(config.baseUrl())
@@ -56,23 +56,13 @@ public class OpenAiClient implements LlmClient {
 
     @Override
     public String chat(List<Message> messages) {
-        ChatCompletion completion = client.chat().completions().create(
-                ChatCompletionCreateParams.builder()
-                        .model(model)
-                        .messages(toSdkParams(messages))
-                        .build());
-
+        ChatCompletion completion = client.chat().completions().create(buildParams(messages));
         return completion.choices().get(0).message().content().orElse("");
     }
 
     @Override
     public void stream(List<Message> messages, Consumer<String> onToken) {
-        try (var response = client.chat().completions().createStreaming(
-                ChatCompletionCreateParams.builder()
-                        .model(model)
-                        .messages(toSdkParams(messages))
-                        .build())) {
-
+        try (var response = client.chat().completions().createStreaming(buildParams(messages))) {
             response.stream()
                     .flatMap(chunk -> chunk.choices().stream())
                     .map(ChatCompletionChunk.Choice::delta)
@@ -80,6 +70,18 @@ public class OpenAiClient implements LlmClient {
                     .filter(token -> !token.isEmpty())
                     .forEach(onToken);
         }
+    }
+
+    private ChatCompletionCreateParams buildParams(List<Message> messages) {
+        var builder = ChatCompletionCreateParams.builder()
+                .model(config.model())
+                .messages(toSdkParams(messages));
+        if (config.temperature()      != null) builder.temperature(config.temperature());
+        if (config.maxTokens()        != null) builder.maxCompletionTokens(config.maxTokens());
+        if (config.topP()             != null) builder.topP(config.topP());
+        if (config.frequencyPenalty() != null) builder.frequencyPenalty(config.frequencyPenalty());
+        if (config.presencePenalty()  != null) builder.presencePenalty(config.presencePenalty());
+        return builder.build();
     }
 
     private List<ChatCompletionMessageParam> toSdkParams(List<Message> messages) {
@@ -107,6 +109,6 @@ public class OpenAiClient implements LlmClient {
     }
 
     public String getModel() {
-        return model;
+        return config.model();
     }
 }
