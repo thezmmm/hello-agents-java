@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -22,6 +23,49 @@ public class ToolRegistry {
     public ToolRegistry register(Tool tool) {
         tools.put(tool.name(), tool);
         return this;
+    }
+
+    /**
+     * Registers a function as a tool without implementing the {@link Tool} interface.
+     *
+     * <pre>
+     *   registry.register("greet", "Greets the user by name", name -> "Hello, " + name + "!");
+     * </pre>
+     *
+     * @param name        unique tool name
+     * @param description one-line description shown to the LLM
+     * @param fn          function that receives the raw input string and returns the result
+     */
+    public ToolRegistry register(String name, String description, Function<String, String> fn) {
+        return register(new Tool() {
+            @Override public String name()        { return name; }
+            @Override public String description() { return description; }
+            @Override public String execute(String input) { return fn.apply(input); }
+        });
+    }
+
+    /**
+     * Registers a function as a tool with explicit parameter metadata.
+     *
+     * <pre>
+     *   registry.register("greet", "Greets the user by name",
+     *           ToolParameter.of(Param.required("name", "Name to greet", "string")),
+     *           name -> "Hello, " + name + "!");
+     * </pre>
+     *
+     * @param name        unique tool name
+     * @param description one-line description shown to the LLM
+     * @param parameters  parameter schema for prompt injection
+     * @param fn          function that receives the raw input string and returns the result
+     */
+    public ToolRegistry register(String name, String description,
+                                 ToolParameter parameters, Function<String, String> fn) {
+        return register(new Tool() {
+            @Override public String name()              { return name; }
+            @Override public String description()       { return description; }
+            @Override public ToolParameter parameters() { return parameters; }
+            @Override public String execute(String input) { return fn.apply(input); }
+        });
     }
 
     /** Removes the tool with the given name. Returns {@code true} if it was present. */

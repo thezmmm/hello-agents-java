@@ -3,6 +3,8 @@ package com.helloagents.demo;
 import com.helloagents.agents.SimpleAgent;
 import com.helloagents.llm.OpenAiClient;
 import com.helloagents.tools.CalculatorTool;
+import com.helloagents.tools.ToolParameter;
+import com.helloagents.tools.ToolRegistry;
 
 /**
  * Demo for SimpleAgent — covers three scenarios:
@@ -24,7 +26,8 @@ public class SimpleAgentDemo {
 
 //        demoBasic(llm);
 //        demoHistory(llm);
-        demoToolCalling(llm);
+//        demoToolCalling(llm);
+        demoFunctionRegistration(llm);
     }
 
     // -------------------------------------------------------------------------
@@ -74,6 +77,32 @@ public class SimpleAgentDemo {
         agent.removeTool("calculate");
         System.out.println("After remove — hasTools: " + agent.hasTools());
         System.out.println();
+    }
+
+    /** Scenario 4: register plain functions (lambda) as tools without implementing Tool. */
+    private static void demoFunctionRegistration(OpenAiClient llm) {
+        printHeader("4. Function Registration");
+
+        // register via lambda — no Tool class needed
+        var registry = new ToolRegistry()
+                .register("uppercase", "Converts text to uppercase",
+                        String::toUpperCase)
+                .register("word_count", "Counts the number of words in the given text",
+                        ToolParameter.of(ToolParameter.Param.required("text", "Text to count words in", "string")),
+                        input -> String.valueOf(input.trim().split("\\s+").length))
+                .register("reverse", "Reverses the characters in a string",
+                        input -> new StringBuilder(input).reverse().toString());
+
+        var agent = new SimpleAgent("FunctionAgent", llm, null, registry);
+        System.out.println("Tools: " + agent.listTools());
+
+        String task = "请把 'hello world' 转换为大写，然后统计 'The quick brown fox jumps over the lazy dog' 的单词数量。";
+        printTask(task);
+        agent.stream(task, token -> {
+            System.out.print(token);
+            System.out.flush();
+        });
+        System.out.println("\n");
     }
 
     // -------------------------------------------------------------------------
