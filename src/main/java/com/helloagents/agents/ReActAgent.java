@@ -22,13 +22,27 @@ import java.util.regex.Pattern;
  *   <li>Action — tool call in the form {@code Action: tool_name[input]}</li>
  *   <li>Observation — result of executing the tool</li>
  * </ol>
- * The loop continues until the LLM emits {@code Action: Finish[]}, with the final answer in the Thought.
+ * The loop continues until the LLM emits {@code Action: Finish}, with the final answer in the Thought.
+ *
+ * <p>Construction:
+ * <pre>
+ *   // minimal
+ *   new ReActAgent(llm, toolRegistry)
+ *
+ *   // full
+ *   new ReActAgent("MyAgent", llm, toolRegistry, systemPrompt, customPrompt, 5)
+ * </pre>
  */
 public class ReActAgent extends AbstractAgent {
 
-    private static final int MAX_STEPS = 10;
+    private static final String DEFAULT_NAME       = "ReActAgent";
+    private static final int    DEFAULT_MAX_STEPS  = 10;
 
-    private static final String SYSTEM_PROMPT = """
+    /**
+     * Default ReAct prompt template. {@code %s} is replaced with tool descriptions at runtime.
+     * Pass a {@code customPrompt} to the full constructor to override this entirely.
+     */
+    private static final String DEFAULT_REACT_PROMPT = """
             You are a reasoning agent that solves tasks step by step using available tools.
 
             At each step, respond in this exact format:
@@ -44,25 +58,49 @@ public class ReActAgent extends AbstractAgent {
             """;
 
     private static final Pattern ACTION_PATTERN =
-            Pattern.compile("Action:\\s*(\\w+)\\[(.*)\\]", Pattern.DOTALL);
+            Pattern.compile("Action:\\s*(\\w+)\\[(.*)]", Pattern.DOTALL);
     private static final Pattern FINISH_PATTERN =
             Pattern.compile("Action:\\s*Finish\\s*$", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
     private static final Pattern THOUGHT_PATTERN =
             Pattern.compile("Thought:\\s*(.+?)(?=\\nAction:|$)", Pattern.DOTALL);
 
-    private final LlmClient llm;
-    private final ToolRegistry tools;
+    private final String      agentName;
+    private final LlmClient   llm;
+    private final String      systemPrompt;  // optional context prepended before the ReAct prompt
+    private final String      customPrompt;  // replaces the default ReAct prompt when non-null
+    private final int         maxSteps;
+    private ToolRegistry      toolRegistry;  // lazily initialised on first addTool()
 
-    public ReActAgent(LlmClient llm, ToolRegistry tools) {
-        this.llm = llm;
-        this.tools = tools;
+    // --- constructors --------------------------------------------------------
+
+    public ReActAgent(LlmClient llm) {
+        this(DEFAULT_NAME, llm, null, null, DEFAULT_MAX_STEPS);
+    }
+
+    public ReActAgent(LlmClient llm, int maxSteps) {
+        this(DEFAULT_NAME, llm, null, null, maxSteps);
+    }
+
+    public ReActAgent(String name, LlmClient llm, String systemPrompt, String customPrompt, int maxSteps) {
+        this.agentName    = (name != null && !name.isBlank()) ? name : DEFAULT_NAME;
+        this.llm          = llm;
+        this.systemPrompt = (systemPrompt != null && !systemPrompt.isBlank()) ? systemPrompt : null;
+        this.customPrompt = (customPrompt != null && !customPrompt.isBlank()) ? customPrompt : null;
+        this.maxSteps     = maxSteps > 0 ? maxSteps : DEFAULT_MAX_STEPS;
     }
 
     @Override
-    public String run(String task) {
-        List<Message> workingHistory = buildWorkingHistory(task);
+    public String name() {
+        return agentName;
+    }
 
-        for (int step = 0; step < MAX_STEPS; step++) {
+    // --- run / stream --------------------------------------------------------
+
+    @Override
+    public String run(String task) {
+        List<Message> workingHistory = buildMessages(task);
+
+        for (int step = 0; step < maxSteps; step++) {
             String response = llm.chat(workingHistory);
             workingHistory.add(Message.assistant(response));
 
@@ -76,7 +114,7 @@ public class ReActAgent extends AbstractAgent {
 
             Matcher actionMatcher = ACTION_PATTERN.matcher(response);
             if (actionMatcher.find()) {
-                String observation = tools.execute(
+                String observation = executeTool(
                         actionMatcher.group(1).strip(),
                         actionMatcher.group(2).strip());
                 workingHistory.add(Message.user("Observation: " + observation));
@@ -95,10 +133,10 @@ public class ReActAgent extends AbstractAgent {
 
     @Override
     public void stream(String task, Consumer<String> onToken) {
-        List<Message> workingHistory = buildWorkingHistory(task);
+        List<Message> workingHistory = buildMessages(task);
         StringBuilder fullOutput = new StringBuilder();
 
-        for (int step = 0; step < MAX_STEPS; step++) {
+        for (int step = 0; step < maxSteps; step++) {
             StringBuilder buf = new StringBuilder();
             llm.stream(workingHistory, token -> {
                 buf.append(token);
@@ -116,7 +154,7 @@ public class ReActAgent extends AbstractAgent {
 
             Matcher actionMatcher = ACTION_PATTERN.matcher(response);
             if (actionMatcher.find()) {
-                String observation = tools.execute(
+                String observation = executeTool(
                         actionMatcher.group(1).strip(),
                         actionMatcher.group(2).strip());
                 String observationLine = "\nObservation: " + observation + "\n";
@@ -137,10 +175,47 @@ public class ReActAgent extends AbstractAgent {
         addMessage(Message.assistant(fullOutput.toString()));
     }
 
-    private List<Message> buildWorkingHistory(String task) {
-        List<Message> workingHistory = new ArrayList<>();
-        workingHistory.add(Message.system(SYSTEM_PROMPT.formatted(tools.describe())));
-        workingHistory.add(Message.user(task));
-        return workingHistory;
+    // --- internal ------------------------------------------------------------
+
+    private List<Message> buildMessages(String task) {
+        List<Message> messages = new ArrayList<>();
+        messages.add(Message.system(buildSystemPrompt()));
+        messages.addAll(getHistory());          // inject conversation history
+        messages.add(Message.user(task));
+        return messages;
+    }
+
+    private String buildSystemPrompt() {
+        String toolsDesc = hasTools() ? toolRegistry.describe() : "(none)";
+        String reactPrompt = customPrompt != null
+                ? (customPrompt.contains("%s") ? customPrompt.formatted(toolsDesc)
+                                               : customPrompt + "\n\nAvailable tools:\n" + toolsDesc)
+                : DEFAULT_REACT_PROMPT.formatted(toolsDesc);
+
+        return systemPrompt != null ? systemPrompt + "\n\n" + reactPrompt : reactPrompt;
+    }
+
+    private String executeTool(String toolName, String input) {
+        if (!hasTools()) return "Error: no tools registered.";
+        return toolRegistry.execute(toolName, input);
+    }
+
+    // --- tool management -----------------------------------------------------
+
+    public void addTool(Tool tool) {
+        if (toolRegistry == null) toolRegistry = new ToolRegistry();
+        toolRegistry.register(tool);
+    }
+
+    public boolean hasTools() {
+        return toolRegistry != null && toolRegistry.hasTools();
+    }
+
+    public boolean removeTool(String toolName) {
+        return toolRegistry != null && toolRegistry.unregister(toolName);
+    }
+
+    public List<String> listTools() {
+        return toolRegistry == null ? List.of() : toolRegistry.list();
     }
 }
