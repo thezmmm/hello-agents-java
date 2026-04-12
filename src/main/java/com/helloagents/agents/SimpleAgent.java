@@ -133,13 +133,12 @@ public class SimpleAgent extends AbstractAgent {
             }
             messages.add(Message.assistant(cleanResponse.strip()));
 
-            // execute tools, emit observations, feed back as tool messages
-            for (int i = 0; i < toolCalls.size(); i++) {
-                ToolCall call = toolCalls.get(i);
-                String callId = "call_%s_%d_%d".formatted(call.toolName(), iteration, i);
+            // execute tools, emit observations, feed back as user messages
+            for (ToolCall call : toolCalls) {
                 String result = executeToolCall(call);
-                onToken.accept("\nObservation: " + result + "\n");
-                messages.add(Message.tool(callId, result));
+                String observation = "Observation: " + result;
+                onToken.accept("\n" + observation + "\n");
+                messages.add(Message.user(observation));
             }
         }
 
@@ -173,10 +172,8 @@ public class SimpleAgent extends AbstractAgent {
                 cleanResponse = cleanResponse.replace(call.original(), "");
             }
             messages.add(Message.assistant(cleanResponse.strip()));
-            for (int i = 0; i < toolCalls.size(); i++) {
-                ToolCall call = toolCalls.get(i);
-                String callId = "call_%s_%d_%d".formatted(call.toolName(), iteration, i);
-                messages.add(Message.tool(callId, executeToolCall(call)));
+            for (ToolCall call : toolCalls) {
+                messages.add(Message.user("Observation: " + executeToolCall(call)));
             }
         }
 

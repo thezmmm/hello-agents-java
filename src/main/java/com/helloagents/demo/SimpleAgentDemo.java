@@ -22,8 +22,8 @@ public class SimpleAgentDemo {
     public static void main(String[] args) {
         var llm = OpenAiClient.fromEnv();
 
-        demoBasic(llm);
-        demoHistory(llm);
+//        demoBasic(llm);
+//        demoHistory(llm);
         demoToolCalling(llm);
     }
 
