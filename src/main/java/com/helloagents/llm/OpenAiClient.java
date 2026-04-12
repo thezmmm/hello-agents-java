@@ -11,8 +11,6 @@ import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
 import com.openai.models.chat.completions.ChatCompletionToolMessageParam;
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
 
-import io.github.cdimascio.dotenv.Dotenv;
-
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -21,42 +19,39 @@ import java.util.stream.Collectors;
  * LLM client backed by the official OpenAI Java SDK.
  * Works with OpenAI and any OpenAI-compatible endpoint.
  *
- * <p>Configuration via environment variables (or .env file):
- * <ul>
- *   <li>{@code LLM_API_KEY} — required</li>
- *   <li>{@code LLM_BASE_URL} — optional, defaults to https://api.openai.com/v1</li>
- *   <li>{@code LLM_MODEL} — optional, defaults to gpt-4o</li>
- * </ul>
+ * <p>Preferred construction:
+ * <pre>
+ *   OpenAiClient client = new OpenAiClient(LlmConfig.fromEnv());
+ *
+ *   OpenAiClient client = new OpenAiClient(
+ *           LlmConfig.builder().apiKey("sk-...").model("gpt-4o").build());
+ * </pre>
  */
 public class OpenAiClient implements LlmClient {
-
-    private static final String DEFAULT_BASE_URL = "https://api.openai.com/v1";
-    private static final String DEFAULT_MODEL = "gpt-4o";
 
     private final OpenAIClient client;
     private final String model;
 
-    public OpenAiClient(String apiKey, String baseUrl, String model) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalArgumentException("API key must not be empty");
-        }
-        String resolvedBaseUrl = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : DEFAULT_BASE_URL;
-        this.model = (model != null && !model.isBlank()) ? model : DEFAULT_MODEL;
-
+    public OpenAiClient(LlmConfig config) {
+        this.model = config.model();
         this.client = OpenAIOkHttpClient.builder()
-                .apiKey(apiKey)
-                .baseUrl(resolvedBaseUrl)
+                .apiKey(config.apiKey())
+                .baseUrl(config.baseUrl())
                 .build();
     }
 
-    /** Create from .env file or system environment variables. */
+    /** Convenience constructor — delegates to {@link LlmConfig}. */
+    public OpenAiClient(String apiKey, String baseUrl, String model) {
+        this(LlmConfig.builder()
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .model(model)
+                .build());
+    }
+
+    /** Creates a client from environment variables or a {@code .env} file. */
     public static OpenAiClient fromEnv() {
-        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
-        return new OpenAiClient(
-                dotenv.get("LLM_API_KEY"),
-                dotenv.get("LLM_BASE_URL"),
-                dotenv.get("LLM_MODEL")
-        );
+        return new OpenAiClient(LlmConfig.fromEnv());
     }
 
     @Override
