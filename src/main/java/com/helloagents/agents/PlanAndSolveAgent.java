@@ -3,6 +3,8 @@ package com.helloagents.agents;
 import com.helloagents.core.AbstractAgent;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
+import com.helloagents.tools.Tool;
+import com.helloagents.tools.ToolRegistry;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -15,35 +17,56 @@ import java.util.function.Consumer;
  *   <li>{@link Planner} — decomposes the task into a numbered list of sub-steps</li>
  *   <li>{@link Solver}  — works through each sub-step and produces the final answer</li>
  * </ol>
+ * Tools are used during the Solver phase; the Planner always runs without tools.
  *
- * <p>Typical construction:
+ * <p>Construction:
  * <pre>
- *   // convenience: both components share the same LlmClient
- *   PlanAndSolveAgent agent = PlanAndSolveAgent.of(llm);
+ *   // minimal — planner and solver share the same LLM
+ *   new PlanAndSolveAgent(llm)
  *
- *   // advanced: inject different clients (e.g. a cheaper model for planning)
- *   PlanAndSolveAgent agent = new PlanAndSolveAgent(new Planner(fastLlm), new Solver(smartLlm));
+ *   // with custom name
+ *   new PlanAndSolveAgent("MyAgent", llm)
+ *
+ *   // advanced — separate LLMs for each phase (e.g. cheaper model for planning)
+ *   new PlanAndSolveAgent("MyAgent", plannerLlm, solverLlm)
  * </pre>
  */
 public class PlanAndSolveAgent extends AbstractAgent {
 
+    private static final String DEFAULT_NAME = "PlanAndSolveAgent";
+
+    private final String  agentName;
     private final Planner planner;
-    private final Solver solver;
+    private final Solver  solver;
+    private ToolRegistry  toolRegistry;  // lazily initialised on first addTool()
 
-    public PlanAndSolveAgent(Planner planner, Solver solver) {
-        this.planner = planner;
-        this.solver = solver;
+    // --- constructors --------------------------------------------------------
+
+    public PlanAndSolveAgent(LlmClient llm) {
+        this(DEFAULT_NAME, llm, llm);
     }
 
-    /** Factory method: both components share the same {@link LlmClient}. */
-    public static PlanAndSolveAgent of(LlmClient llm) {
-        return new PlanAndSolveAgent(new Planner(llm), new Solver(llm));
+    public PlanAndSolveAgent(String name, LlmClient llm) {
+        this(name, llm, llm);
     }
+
+    public PlanAndSolveAgent(String name, LlmClient plannerLlm, LlmClient solverLlm) {
+        this.agentName = (name != null && !name.isBlank()) ? name : DEFAULT_NAME;
+        this.planner   = new Planner(plannerLlm);
+        this.solver    = new Solver(solverLlm);
+    }
+
+    @Override
+    public String name() {
+        return agentName;
+    }
+
+    // --- run / stream --------------------------------------------------------
 
     @Override
     public String run(String task) {
         List<String> steps = planner.plan(task);
-        String response = solver.solve(task, steps);
+        String response = solver.solve(task, steps, toolRegistry);
         addMessage(Message.user(task));
         addMessage(Message.assistant(response));
         return response;
@@ -53,11 +76,30 @@ public class PlanAndSolveAgent extends AbstractAgent {
     public void stream(String task, Consumer<String> onToken) {
         List<String> steps = planner.plan(task);
         StringBuilder buf = new StringBuilder();
-        solver.stream(task, steps, token -> {
+        solver.stream(task, steps, toolRegistry, token -> {
             buf.append(token);
             onToken.accept(token);
         });
         addMessage(Message.user(task));
         addMessage(Message.assistant(buf.toString()));
+    }
+
+    // --- tool management -----------------------------------------------------
+
+    public void addTool(Tool tool) {
+        if (toolRegistry == null) toolRegistry = new ToolRegistry();
+        toolRegistry.register(tool);
+    }
+
+    public boolean hasTools() {
+        return toolRegistry != null && toolRegistry.hasTools();
+    }
+
+    public boolean removeTool(String toolName) {
+        return toolRegistry != null && toolRegistry.unregister(toolName);
+    }
+
+    public List<String> listTools() {
+        return toolRegistry == null ? List.of() : toolRegistry.list();
     }
 }
