@@ -1,6 +1,6 @@
 package com.helloagents.agents;
 
-import com.helloagents.core.BaseAgent;
+import com.helloagents.core.AbstractAgent;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
 
@@ -17,7 +17,7 @@ import java.util.function.Consumer;
  *   <li>Refine — produce an improved answer based on the critique</li>
  * </ol>
  */
-public class ReflectionAgent implements BaseAgent {
+public class ReflectionAgent extends AbstractAgent {
 
     private static final String GENERATE_SYSTEM = """
             You are an expert assistant. Answer the user's question thoroughly and accurately.
@@ -47,14 +47,22 @@ public class ReflectionAgent implements BaseAgent {
     public String run(String task) {
         String draft    = generate(task);
         String critique = reflect(task, draft);
-        return llm.chat(refineMessages(task, draft, critique));
+        String response = llm.chat(refineMessages(task, draft, critique));
+        addMessage(Message.user(task));
+        addMessage(Message.assistant(response));
+        return response;
     }
 
     @Override
     public void stream(String task, Consumer<String> onToken) {
         String draft    = generate(task);
         String critique = reflect(task, draft);
-        llm.stream(refineMessages(task, draft, critique), onToken);
+        StringBuilder buf = new StringBuilder();
+        llm.stream(refineMessages(task, draft, critique), token -> {
+            buf.append(token);
+            onToken.accept(token);
+        });
+        recordTurn(task, buf.toString());
     }
 
     private String generate(String task) {

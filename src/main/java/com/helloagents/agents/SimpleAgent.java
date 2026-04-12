@@ -1,6 +1,6 @@
 package com.helloagents.agents;
 
-import com.helloagents.core.BaseAgent;
+import com.helloagents.core.AbstractAgent;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
 
@@ -13,7 +13,7 @@ import java.util.function.Consumer;
  * <p>Chapter 1 — Hello Agent: demonstrates the most basic agent pattern where
  * the user task is sent directly to the LLM and the reply is returned as-is.
  */
-public class SimpleAgent implements BaseAgent {
+public class SimpleAgent extends AbstractAgent {
 
     private static final String DEFAULT_SYSTEM_PROMPT = """
             You are a helpful assistant. Answer the user's question concisely and accurately.
@@ -33,12 +33,20 @@ public class SimpleAgent implements BaseAgent {
 
     @Override
     public String run(String task) {
-        return llm.chat(messages(task));
+        String response = llm.chat(messages(task));
+        addMessage(Message.user(task));
+        addMessage(Message.assistant(response));
+        return response;
     }
 
     @Override
     public void stream(String task, Consumer<String> onToken) {
-        llm.stream(messages(task), onToken);
+        StringBuilder buf = new StringBuilder();
+        llm.stream(messages(task), token -> {
+            buf.append(token);
+            onToken.accept(token);
+        });
+        recordTurn(task, buf.toString());
     }
 
     private List<Message> messages(String task) {

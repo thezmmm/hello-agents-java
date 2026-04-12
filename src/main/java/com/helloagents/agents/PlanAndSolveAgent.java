@@ -1,7 +1,8 @@
 package com.helloagents.agents;
 
-import com.helloagents.core.BaseAgent;
+import com.helloagents.core.AbstractAgent;
 import com.helloagents.llm.LlmClient;
+import com.helloagents.llm.Message;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -24,7 +25,7 @@ import java.util.function.Consumer;
  *   PlanAndSolveAgent agent = new PlanAndSolveAgent(new Planner(fastLlm), new Solver(smartLlm));
  * </pre>
  */
-public class PlanAndSolveAgent implements BaseAgent {
+public class PlanAndSolveAgent extends AbstractAgent {
 
     private final Planner planner;
     private final Solver solver;
@@ -42,12 +43,21 @@ public class PlanAndSolveAgent implements BaseAgent {
     @Override
     public String run(String task) {
         List<String> steps = planner.plan(task);
-        return solver.solve(task, steps);
+        String response = solver.solve(task, steps);
+        addMessage(Message.user(task));
+        addMessage(Message.assistant(response));
+        return response;
     }
 
     @Override
     public void stream(String task, Consumer<String> onToken) {
         List<String> steps = planner.plan(task);
-        solver.stream(task, steps, onToken);
+        StringBuilder buf = new StringBuilder();
+        solver.stream(task, steps, token -> {
+            buf.append(token);
+            onToken.accept(token);
+        });
+        addMessage(Message.user(task));
+        addMessage(Message.assistant(buf.toString()));
     }
 }

@@ -1,6 +1,6 @@
 package com.helloagents.agents;
 
-import com.helloagents.core.BaseAgent;
+import com.helloagents.core.AbstractAgent;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
 import com.helloagents.tools.Tool;
@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  * </ol>
  * The loop continues until the LLM emits {@code Action: Finish[]}, with the final answer in the Thought.
  */
-public class ReActAgent implements BaseAgent {
+public class ReActAgent extends AbstractAgent {
 
     private static final int MAX_STEPS = 10;
 
@@ -60,15 +60,18 @@ public class ReActAgent implements BaseAgent {
 
     @Override
     public String run(String task) {
-        List<Message> history = buildHistory(task);
+        List<Message> workingHistory = buildWorkingHistory(task);
 
         for (int step = 0; step < MAX_STEPS; step++) {
-            String response = llm.chat(history);
-            history.add(Message.assistant(response));
+            String response = llm.chat(workingHistory);
+            workingHistory.add(Message.assistant(response));
 
             if (FINISH_PATTERN.matcher(response).find()) {
-                Matcher thoughtMatcher = THOUGHT_PATTERN.matcher(response);
-                return thoughtMatcher.find() ? thoughtMatcher.group(1).strip() : response;
+                Matcher m = THOUGHT_PATTERN.matcher(response);
+                String answer = m.find() ? m.group(1).strip() : response;
+                addMessage(Message.user(task));
+                addMessage(Message.assistant(answer));
+                return answer;
             }
 
             Matcher actionMatcher = ACTION_PATTERN.matcher(response);
@@ -76,31 +79,38 @@ public class ReActAgent implements BaseAgent {
                 String observation = tools.execute(
                         actionMatcher.group(1).strip(),
                         actionMatcher.group(2).strip());
-                history.add(Message.user("Observation: " + observation));
+                workingHistory.add(Message.user("Observation: " + observation));
             } else {
+                addMessage(Message.user(task));
+                addMessage(Message.assistant(response));
                 return response;
             }
         }
 
-        return "Max steps reached without a final answer.";
+        String fallback = "Max steps reached without a final answer.";
+        addMessage(Message.user(task));
+        addMessage(Message.assistant(fallback));
+        return fallback;
     }
 
     @Override
     public void stream(String task, Consumer<String> onToken) {
-        List<Message> history = buildHistory(task);
+        List<Message> workingHistory = buildWorkingHistory(task);
+        StringBuilder fullOutput = new StringBuilder();
 
         for (int step = 0; step < MAX_STEPS; step++) {
-            // Stream each step's output so the user sees the thinking in real time,
-            // while accumulating the full text for parsing.
             StringBuilder buf = new StringBuilder();
-            llm.stream(history, token -> {
+            llm.stream(workingHistory, token -> {
                 buf.append(token);
+                fullOutput.append(token);
                 onToken.accept(token);
             });
             String response = buf.toString();
-            history.add(Message.assistant(response));
+            workingHistory.add(Message.assistant(response));
 
             if (FINISH_PATTERN.matcher(response).find()) {
+                addMessage(Message.user(task));
+                addMessage(Message.assistant(fullOutput.toString()));
                 return;
             }
 
@@ -110,20 +120,26 @@ public class ReActAgent implements BaseAgent {
                         actionMatcher.group(1).strip(),
                         actionMatcher.group(2).strip());
                 String observationLine = "\nObservation: " + observation + "\n";
+                fullOutput.append(observationLine);
                 onToken.accept(observationLine);
-                history.add(Message.user("Observation: " + observation));
+                workingHistory.add(Message.user("Observation: " + observation));
             } else {
+                addMessage(Message.user(task));
+                addMessage(Message.assistant(fullOutput.toString()));
                 return;
             }
         }
 
-        onToken.accept("\nMax steps reached without a final answer.");
+        String fallback = "\nMax steps reached without a final answer.";
+        fullOutput.append(fallback);
+        onToken.accept(fallback);
+        addMessage(Message.user(task)); addMessage(Message.assistant(fullOutput.toString());
     }
 
-    private List<Message> buildHistory(String task) {
-        List<Message> history = new ArrayList<>();
-        history.add(Message.system(SYSTEM_PROMPT.formatted(tools.describe())));
-        history.add(Message.user(task));
-        return history;
+    private List<Message> buildWorkingHistory(String task) {
+        List<Message> workingHistory = new ArrayList<>();
+        workingHistory.add(Message.system(SYSTEM_PROMPT.formatted(tools.describe())));
+        workingHistory.add(Message.user(task));
+        return workingHistory;
     }
 }
