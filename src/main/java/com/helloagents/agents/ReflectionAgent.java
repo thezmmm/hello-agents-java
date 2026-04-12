@@ -62,7 +62,8 @@ public class ReflectionAgent extends AbstractAgent {
             buf.append(token);
             onToken.accept(token);
         });
-        recordTurn(task, buf.toString());
+        addMessage(Message.user(task));
+        addMessage(Message.assistant(buf.toString()));
     }
 
     private String generate(String task) {

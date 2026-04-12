@@ -133,7 +133,8 @@ public class ReActAgent extends AbstractAgent {
         String fallback = "\nMax steps reached without a final answer.";
         fullOutput.append(fallback);
         onToken.accept(fallback);
-        addMessage(Message.user(task)); addMessage(Message.assistant(fullOutput.toString());
+        addMessage(Message.user(task));
+        addMessage(Message.assistant(fullOutput.toString()));
     }
 
     private List<Message> buildWorkingHistory(String task) {
