@@ -8,6 +8,7 @@ import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
+import com.openai.models.chat.completions.ChatCompletionToolMessageParam;
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
 
 import io.github.cdimascio.dotenv.Dotenv;
@@ -95,6 +96,11 @@ public class OpenAiClient implements LlmClient {
                                     .build());
                     case "assistant" -> ChatCompletionMessageParam.ofAssistant(
                             ChatCompletionAssistantMessageParam.builder()
+                                    .content(m.content())
+                                    .build());
+                    case "tool" -> ChatCompletionMessageParam.ofTool(
+                            ChatCompletionToolMessageParam.builder()
+                                    .toolCallId(m.toolCallId())
                                     .content(m.content())
                                     .build());
                     default -> ChatCompletionMessageParam.ofUser(
