@@ -1,6 +1,7 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
+import com.helloagents.core.ToolSupport;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
 import com.helloagents.tools.Tool;
@@ -31,7 +32,7 @@ import java.util.function.Consumer;
  *   new PlanAndSolveAgent("MyAgent", plannerLlm, solverLlm)
  * </pre>
  */
-public class PlanAndSolveAgent extends AbstractAgent {
+public class PlanAndSolveAgent extends AbstractAgent implements ToolSupport {
 
     private static final String DEFAULT_NAME = "PlanAndSolveAgent";
 

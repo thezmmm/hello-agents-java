@@ -1,6 +1,7 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
+import com.helloagents.core.ToolSupport;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
 import com.helloagents.tools.Tool;
@@ -33,7 +34,7 @@ import java.util.regex.Pattern;
  *   new ReActAgent("MyAgent", llm, toolRegistry, systemPrompt, customPrompt, 5)
  * </pre>
  */
-public class ReActAgent extends AbstractAgent {
+public class ReActAgent extends AbstractAgent implements ToolSupport {
 
     private static final String DEFAULT_NAME       = "ReActAgent";
     private static final int    DEFAULT_MAX_STEPS  = 10;

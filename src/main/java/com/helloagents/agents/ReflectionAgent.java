@@ -1,6 +1,7 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
+import com.helloagents.core.ToolSupport;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
 import com.helloagents.tools.Tool;
@@ -30,7 +31,7 @@ import java.util.function.Consumer;
  *   new ReflectionAgent("MyAgent", llm, systemPrompt)
  * </pre>
  */
-public class ReflectionAgent extends AbstractAgent {
+public class ReflectionAgent extends AbstractAgent implements ToolSupport {
 
     private static final String DEFAULT_NAME = "ReflectionAgent";
     private static final int    DEFAULT_MAX_TOOL_ITERATIONS = 3;

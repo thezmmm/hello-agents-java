@@ -1,6 +1,7 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
+import com.helloagents.core.ToolSupport;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
 import com.helloagents.tools.Tool;
@@ -23,7 +24,7 @@ import java.util.function.Consumer;
  *       results are fed back as {@code tool} role messages.</li>
  * </ul>
  */
-public class SimpleAgent extends AbstractAgent {
+public class SimpleAgent extends AbstractAgent implements ToolSupport {
 
     private static final String DEFAULT_SYSTEM_PROMPT =
             "You are a helpful assistant. Answer the user's question concisely and accurately.";
