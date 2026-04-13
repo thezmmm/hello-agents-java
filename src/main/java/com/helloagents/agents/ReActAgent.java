@@ -3,6 +3,7 @@ package com.helloagents.agents;
 import com.helloagents.core.AbstractAgent;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
+import com.helloagents.tools.ToolCall;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,13 +40,16 @@ public class ReActAgent extends AbstractAgent {
     /**
      * Default ReAct prompt template. {@code %s} is replaced with tool descriptions at runtime.
      * Pass a {@code customPrompt} to the full constructor to override this entirely.
+     *
+     * <p>Tool calls use the project-standard {@code [TOOL_CALL:tool_name:input]} format so that
+     * {@link com.helloagents.tools.ToolRegistry#parseToolCalls} can be reused directly.
      */
     private static final String DEFAULT_REACT_PROMPT = """
             You are a reasoning agent that solves tasks step by step using available tools.
 
             At each step, respond in this exact format:
             Thought: <your reasoning about what to do next>
-            Action: <tool_name>[<input>]
+            Action: [TOOL_CALL:tool_name:input]
 
             When you have enough information to answer the user, respond with:
             Thought: <your final answer>
@@ -55,8 +59,6 @@ public class ReActAgent extends AbstractAgent {
             %s
             """;
 
-    private static final Pattern ACTION_PATTERN =
-            Pattern.compile("Action:\\s*(\\w+)\\[(.*)]", Pattern.DOTALL);
     private static final Pattern FINISH_PATTERN =
             Pattern.compile("Action:\\s*Finish\\s*$", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
     private static final Pattern THOUGHT_PATTERN =
@@ -109,12 +111,12 @@ public class ReActAgent extends AbstractAgent {
                 return answer;
             }
 
-            Matcher actionMatcher = ACTION_PATTERN.matcher(response);
-            if (actionMatcher.find()) {
-                String observation = executeTool(
-                        actionMatcher.group(1).strip(),
-                        actionMatcher.group(2).strip());
-                workingHistory.add(Message.user("Observation: " + observation));
+            List<ToolCall> toolCalls = hasTools() ? toolRegistry.parseToolCalls(response) : List.of();
+            if (!toolCalls.isEmpty()) {
+                for (ToolCall call : toolCalls) {
+                    String observation = toolRegistry.execute(call.toolName(), call.parameters());
+                    workingHistory.add(Message.user("Observation: " + observation));
+                }
             } else {
                 addMessage(Message.user(task));
                 addMessage(Message.assistant(response));
@@ -149,15 +151,15 @@ public class ReActAgent extends AbstractAgent {
                 return;
             }
 
-            Matcher actionMatcher = ACTION_PATTERN.matcher(response);
-            if (actionMatcher.find()) {
-                String observation = executeTool(
-                        actionMatcher.group(1).strip(),
-                        actionMatcher.group(2).strip());
-                String observationLine = "\nObservation: " + observation + "\n";
-                fullOutput.append(observationLine);
-                onToken.accept(observationLine);
-                workingHistory.add(Message.user("Observation: " + observation));
+            List<ToolCall> toolCalls = hasTools() ? toolRegistry.parseToolCalls(response) : List.of();
+            if (!toolCalls.isEmpty()) {
+                for (ToolCall call : toolCalls) {
+                    String observation = toolRegistry.execute(call.toolName(), call.parameters());
+                    String observationLine = "\nObservation: " + observation + "\n";
+                    fullOutput.append(observationLine);
+                    onToken.accept(observationLine);
+                    workingHistory.add(Message.user("Observation: " + observation));
+                }
             } else {
                 addMessage(Message.user(task));
                 addMessage(Message.assistant(fullOutput.toString()));
@@ -190,11 +192,6 @@ public class ReActAgent extends AbstractAgent {
                 : DEFAULT_REACT_PROMPT.formatted(toolsDesc);
 
         return systemPrompt != null ? systemPrompt + "\n\n" + reactPrompt : reactPrompt;
-    }
-
-    private String executeTool(String toolName, String input) {
-        if (!hasTools()) return "Error: no tools registered.";
-        return toolRegistry.execute(toolName, input);
     }
 
 }
