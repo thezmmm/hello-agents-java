@@ -1,11 +1,8 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
-import com.helloagents.core.ToolSupport;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
-import com.helloagents.tools.Tool;
-import com.helloagents.tools.ToolRegistry;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -32,14 +29,13 @@ import java.util.function.Consumer;
  *   new PlanAndSolveAgent("MyAgent", plannerLlm, solverLlm)
  * </pre>
  */
-public class PlanAndSolveAgent extends AbstractAgent implements ToolSupport {
+public class PlanAndSolveAgent extends AbstractAgent {
 
     private static final String DEFAULT_NAME = "PlanAndSolveAgent";
 
     private final String  agentName;
     private final Planner planner;
     private final Solver  solver;
-    private ToolRegistry  toolRegistry;  // lazily initialised on first addTool()
 
     // --- constructors --------------------------------------------------------
 
@@ -85,22 +81,4 @@ public class PlanAndSolveAgent extends AbstractAgent implements ToolSupport {
         addMessage(Message.assistant(buf.toString()));
     }
 
-    // --- tool management -----------------------------------------------------
-
-    public void addTool(Tool tool) {
-        if (toolRegistry == null) toolRegistry = new ToolRegistry();
-        toolRegistry.register(tool);
-    }
-
-    public boolean hasTools() {
-        return toolRegistry != null && toolRegistry.hasTools();
-    }
-
-    public boolean removeTool(String toolName) {
-        return toolRegistry != null && toolRegistry.unregister(toolName);
-    }
-
-    public List<String> listTools() {
-        return toolRegistry == null ? List.of() : toolRegistry.list();
-    }
 }

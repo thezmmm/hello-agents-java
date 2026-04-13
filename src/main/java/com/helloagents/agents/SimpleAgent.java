@@ -1,10 +1,8 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
-import com.helloagents.core.ToolSupport;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
-import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolCall;
 import com.helloagents.tools.ToolRegistry;
 
@@ -24,7 +22,7 @@ import java.util.function.Consumer;
  *       results are fed back as {@code tool} role messages.</li>
  * </ul>
  */
-public class SimpleAgent extends AbstractAgent implements ToolSupport {
+public class SimpleAgent extends AbstractAgent {
 
     private static final String DEFAULT_SYSTEM_PROMPT =
             "You are a helpful assistant. Answer the user's question concisely and accurately.";
@@ -34,7 +32,6 @@ public class SimpleAgent extends AbstractAgent implements ToolSupport {
     private final String agentName;
     private final LlmClient llm;
     private final String systemPrompt;
-    private ToolRegistry toolRegistry;        // lazily initialised on first addTool()
 
     // --- constructors --------------------------------------------------------
 
@@ -246,37 +243,4 @@ public class SimpleAgent extends AbstractAgent implements ToolSupport {
         return toolRegistry.execute(call.toolName(), call.parameters());
     }
 
-    // --- tool management -----------------------------------------------------
-
-    /**
-     * Registers a tool with this agent. If no registry exists yet, one is created lazily.
-     *
-     * @param tool the tool to add
-     */
-    public void addTool(Tool tool) {
-        if (toolRegistry == null) toolRegistry = new ToolRegistry();
-        toolRegistry.register(tool);
-    }
-
-    /** Returns {@code true} if at least one tool is registered and tool-calling is active. */
-    public boolean hasTools() {
-        return toolRegistry != null && toolRegistry.hasTools();
-    }
-
-    /**
-     * Removes the tool with the given name.
-     *
-     * @return {@code true} if the tool was present and removed
-     */
-    public boolean removeTool(String toolName) {
-        return toolRegistry != null && toolRegistry.unregister(toolName);
-    }
-
-    /**
-     * Returns the names of all registered tools in registration order.
-     * Returns an empty list if no registry has been configured.
-     */
-    public List<String> listTools() {
-        return toolRegistry == null ? List.of() : toolRegistry.list();
-    }
 }

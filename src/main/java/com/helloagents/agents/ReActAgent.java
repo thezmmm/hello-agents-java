@@ -1,11 +1,8 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
-import com.helloagents.core.ToolSupport;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
-import com.helloagents.tools.Tool;
-import com.helloagents.tools.ToolRegistry;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +31,7 @@ import java.util.regex.Pattern;
  *   new ReActAgent("MyAgent", llm, toolRegistry, systemPrompt, customPrompt, 5)
  * </pre>
  */
-public class ReActAgent extends AbstractAgent implements ToolSupport {
+public class ReActAgent extends AbstractAgent {
 
     private static final String DEFAULT_NAME       = "ReActAgent";
     private static final int    DEFAULT_MAX_STEPS  = 10;
@@ -70,7 +67,6 @@ public class ReActAgent extends AbstractAgent implements ToolSupport {
     private final String      systemPrompt;  // optional context prepended before the ReAct prompt
     private final String      customPrompt;  // replaces the default ReAct prompt when non-null
     private final int         maxSteps;
-    private ToolRegistry      toolRegistry;  // lazily initialised on first addTool()
 
     // --- constructors --------------------------------------------------------
 
@@ -201,22 +197,4 @@ public class ReActAgent extends AbstractAgent implements ToolSupport {
         return toolRegistry.execute(toolName, input);
     }
 
-    // --- tool management -----------------------------------------------------
-
-    public void addTool(Tool tool) {
-        if (toolRegistry == null) toolRegistry = new ToolRegistry();
-        toolRegistry.register(tool);
-    }
-
-    public boolean hasTools() {
-        return toolRegistry != null && toolRegistry.hasTools();
-    }
-
-    public boolean removeTool(String toolName) {
-        return toolRegistry != null && toolRegistry.unregister(toolName);
-    }
-
-    public List<String> listTools() {
-        return toolRegistry == null ? List.of() : toolRegistry.list();
-    }
 }
