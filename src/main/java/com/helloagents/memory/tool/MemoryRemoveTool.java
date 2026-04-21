@@ -1,0 +1,41 @@
+package com.helloagents.memory.tool;
+
+import com.helloagents.memory.MemoryManager;
+import com.helloagents.memory.MemoryService;
+import com.helloagents.tools.Tool;
+import com.helloagents.tools.ToolParameter;
+import com.helloagents.tools.ToolParameter.Param;
+
+/** Delete a specific memory entry. Input: the entry ID. */
+public class MemoryRemoveTool implements Tool {
+
+    private final MemoryManager manager;
+
+    public MemoryRemoveTool(MemoryManager manager) {
+        this.manager = manager;
+    }
+
+    @Override public String name() { return "memory_remove"; }
+
+    @Override
+    public String description() {
+        return "Delete a specific memory entry. Input: the entry ID returned by memory_add.";
+    }
+
+    @Override
+    public ToolParameter parameters() {
+        return ToolParameter.of(Param.required("id", "Entry ID to delete", "string"));
+    }
+
+    @Override
+    public String execute(String input) {
+        String id = input == null ? "" : input.strip();
+        if (id.contains("=")) {
+            id = MemoryService.parseParams(input).getOrDefault("id", "");
+        }
+        if (id.isBlank()) return "Error: entry ID is required.";
+        return manager.remove(id)
+                ? "Memory removed. id=" + id
+                : "Error: no memory found with id=" + id;
+    }
+}
