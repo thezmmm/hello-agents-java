@@ -9,6 +9,8 @@ import com.openai.errors.OpenAIServiceException;
 import com.openai.models.embeddings.CreateEmbeddingResponse;
 import com.openai.models.embeddings.EmbeddingCreateParams;
 
+import io.github.cdimascio.dotenv.Dotenv;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,12 +41,15 @@ public class OpenAiEmbeddingModel implements EmbeddingModel {
     }
 
     public static OpenAiEmbeddingModel fromEnv() {
-        String apiKey  = System.getenv().getOrDefault("LLM_API_KEY",
-                System.getenv("OPENAI_API_KEY"));
-        String baseUrl = System.getenv().getOrDefault("LLM_BASE_URL",
-                "https://api.openai.com/v1");
-        String model   = System.getenv().getOrDefault("EMBEDDING_MODEL",
-                "text-embedding-3-small");
+        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+        String apiKey = dotenv.get("LLM_API_KEY");
+        if (apiKey == null || apiKey.isBlank()) apiKey = dotenv.get("OPENAI_API_KEY");
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "Missing API key: set LLM_API_KEY or OPENAI_API_KEY in .env or environment");
+        }
+        String baseUrl = dotenv.get("LLM_BASE_URL", "https://api.openai.com/v1");
+        String model   = dotenv.get("EMBEDDING_MODEL", "text-embedding-3-small");
         return new OpenAiEmbeddingModel(apiKey, baseUrl, model);
     }
 
