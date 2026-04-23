@@ -1,23 +1,17 @@
 package com.helloagents.rag.tool;
 
-import com.helloagents.rag.app.RagQA;
+import com.helloagents.rag.app.RagSystem;
 import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolParameter;
 
-/**
- * Tool: rag_ask
- * 输入格式: question=<问题>|topk=3
- */
+/** Tool: rag_ask — 检索增强问答 */
 public class RagAskTool implements Tool {
 
-    private final RagQA qa;
+    private final RagSystem rag;
 
-    public RagAskTool(RagQA qa) {
-        this.qa = qa;
-    }
+    public RagAskTool(RagSystem rag) { this.rag = rag; }
 
-    @Override
-    public String name() { return "rag_ask"; }
+    @Override public String name() { return "rag_ask"; }
 
     @Override
     public String description() {
@@ -28,7 +22,7 @@ public class RagAskTool implements Tool {
     public ToolParameter parameters() {
         return ToolParameter.of(
                 ToolParameter.Param.required("question", "The question to answer", "string"),
-                ToolParameter.Param.optional("topk", "Number of context chunks (default 3)", "number")
+                ToolParameter.Param.optional("topk",     "Number of context chunks (default 3)", "number")
         );
     }
 
@@ -38,11 +32,11 @@ public class RagAskTool implements Tool {
         String question = params.get("question");
         if (question == null || question.isBlank()) return "Error: question is required";
         int topK = parseIntOrDefault(params.get("topk"), 3);
-        return qa.ask(question, topK);
+        return rag.ask(question, topK);
     }
 
-    private int parseIntOrDefault(String s, int def) {
-        if (s == null) return def;
-        try { return Integer.parseInt(s.strip()); } catch (NumberFormatException e) { return def; }
+    private static int parseIntOrDefault(String s, int def) {
+        try { return s != null ? Integer.parseInt(s.strip()) : def; }
+        catch (NumberFormatException e) { return def; }
     }
 }

@@ -1,27 +1,19 @@
 package com.helloagents.rag.tool;
 
-import com.helloagents.rag.app.RagSearch;
-import com.helloagents.rag.core.SearchResult;
+import com.helloagents.rag.app.RagSystem;
 import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolParameter;
 
-import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * Tool: rag_search
- * 输入格式: query=<问题>|topk=5
- */
+/** Tool: rag_search — 语义搜索，返回相关段落 */
 public class RagSearchTool implements Tool {
 
-    private final RagSearch search;
+    private final RagSystem rag;
 
-    public RagSearchTool(RagSearch search) {
-        this.search = search;
-    }
+    public RagSearchTool(RagSystem rag) { this.rag = rag; }
 
-    @Override
-    public String name() { return "rag_search"; }
+    @Override public String name() { return "rag_search"; }
 
     @Override
     public String description() {
@@ -32,7 +24,7 @@ public class RagSearchTool implements Tool {
     public ToolParameter parameters() {
         return ToolParameter.of(
                 ToolParameter.Param.required("query", "Search query", "string"),
-                ToolParameter.Param.optional("topk", "Number of results (default 3)", "number")
+                ToolParameter.Param.optional("topk",  "Number of results (default 3)", "number")
         );
     }
 
@@ -42,17 +34,15 @@ public class RagSearchTool implements Tool {
         String query = params.get("query");
         if (query == null || query.isBlank()) return "Error: query is required";
         int topK = parseIntOrDefault(params.get("topk"), 3);
-
-        List<SearchResult> results = search.search(query, topK);
+        var results = rag.search(query, topK);
         if (results.isEmpty()) return "No results found for: " + query;
-
         return results.stream()
-                .map(r -> String.format("[%.3f] %s", r.score(), r.content()))
+                .map(r -> "[%.3f] %s".formatted(r.score(), r.content()))
                 .collect(Collectors.joining("\n---\n"));
     }
 
-    private int parseIntOrDefault(String s, int def) {
-        if (s == null) return def;
-        try { return Integer.parseInt(s.strip()); } catch (NumberFormatException e) { return def; }
+    private static int parseIntOrDefault(String s, int def) {
+        try { return s != null ? Integer.parseInt(s.strip()) : def; }
+        catch (NumberFormatException e) { return def; }
     }
 }
