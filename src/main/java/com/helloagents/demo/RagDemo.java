@@ -46,16 +46,29 @@ public class RagDemo {
 
         var kb2     = new KnowledgeBase(new InMemoryDocumentStore(), new InMemoryVectorStore());
         var toolkit = new RagToolkit(embeddingModel, kb2, llm);
+        var rag2    = toolkit.getRagSystem();
         var agent   = new SimpleAgent(llm);
         toolkit.getTools().forEach(agent::addTool);
 
-        System.out.println(agent.run("""
+        System.out.printf("【运行前】文档数: %d  chunk数: %d%n",
+                rag2.documentCount(), rag2.chunkCount());
+
+        String answer = agent.run("""
                 请先将下面内容加入知识库（source=python-intro.txt）：
                 Python 是一种高级编程语言，以简洁可读著称。
                 Python 使用动态类型和垃圾回收机制，支持多种编程范式。
                 CPython 是最常见的 Python 实现，代码运行在解释器上。
 
                 然后回答：Python 的内存管理是如何工作的？
-                """));
+                """);
+
+        System.out.printf("【运行后】文档数: %d  chunk数: %d%n",
+                rag2.documentCount(), rag2.chunkCount());
+        System.out.println("\n--- 知识库文档列表 ---");
+        rag2.listDocuments().forEach(doc ->
+                System.out.printf("  id=%-36s  source=%s%n", doc.id(), doc.source()));
+
+        System.out.println("\n--- Agent 最终回答 ---");
+        System.out.println(answer);
     }
 }
