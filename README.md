@@ -28,7 +28,7 @@
 | Maven | 3.x | 构建工具 |
 | openai-java | 2.1.0 | 官方 OpenAI Java SDK |
 | jackson-databind | 2.17.1 | JSON 序列化 |
-| Apache Tika | 2.9.2 | 文档解析（200+ 格式） |
+| Apache Tika | 2.9.2 | 文档解析（PDF、Office、HTML 等多种格式） |
 | dotenv-java | 3.0.0 | 本地 `.env` 配置加载 |
 | JUnit 5 | 5.10.2 | 单元测试 |
 
@@ -247,7 +247,7 @@ toolkit.getTools().forEach(agent::register);
 
 ## RAG 系统
 
-模块化 RAG 架构，支持 200+ 文档格式（PDF、Office、HTML、图像等），包含 8 个功能包：
+模块化 RAG 架构，支持多种文档格式（PDF、Office、HTML、纯文本等，由 Apache Tika 驱动），包含 8 个功能包：
 
 | 包 | 职责 |
 |----|------|
