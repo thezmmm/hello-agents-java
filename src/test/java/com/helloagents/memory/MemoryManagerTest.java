@@ -1,5 +1,7 @@
 package com.helloagents.memory;
 
+import com.helloagents.memory.core.MemoryEntry;
+import com.helloagents.memory.core.MemoryType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

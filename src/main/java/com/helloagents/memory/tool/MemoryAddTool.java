@@ -1,7 +1,7 @@
 package com.helloagents.memory.tool;
 
 import com.helloagents.memory.MemoryService;
-import com.helloagents.memory.MemoryType;
+import com.helloagents.memory.core.MemoryType;
 import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolParameter;
 import com.helloagents.tools.ToolParameter.Param;

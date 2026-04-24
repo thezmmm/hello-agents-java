@@ -1,4 +1,4 @@
-package com.helloagents.memory;
+package com.helloagents.memory.core;
 
 import java.util.List;
 import java.util.Optional;
@@ -9,7 +9,7 @@ import java.util.Optional;
  * <p>Each {@link MemoryType} maps to one {@code MemoryStore} implementation
  * ({@code WorkingMemory}, {@code EpisodicMemory}, etc.) that handles its own
  * storage and type-specific constraints.
- * {@link MemoryManager} holds one instance per type and routes operations
+ * {@link com.helloagents.memory.MemoryManager} holds one instance per type and routes operations
  * to the appropriate store.
  */
 public interface MemoryStore {

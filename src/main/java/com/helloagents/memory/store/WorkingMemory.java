@@ -1,6 +1,8 @@
-package com.helloagents.memory;
+package com.helloagents.memory.store;
 
 import com.helloagents.llm.Message;
+import com.helloagents.memory.core.MemoryEntry;
+import com.helloagents.memory.core.MemoryType;
 
 import java.util.HashMap;
 import java.util.List;
@@ -134,7 +136,7 @@ public class WorkingMemory extends InMemoryStore {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }
 
-    static double clamp(double v) {
+    public static double clamp(double v) {
         return Math.max(0.0, Math.min(1.0, v));
     }
 }

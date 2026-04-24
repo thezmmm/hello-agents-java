@@ -1,4 +1,4 @@
-package com.helloagents.memory;
+package com.helloagents.memory.core;
 
 /**
  * Strategy that determines which memories are evicted during a {@code forget} operation.

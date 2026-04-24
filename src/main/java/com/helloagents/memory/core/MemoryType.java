@@ -1,4 +1,4 @@
-package com.helloagents.memory;
+package com.helloagents.memory.core;
 
 /**
  * Cognitive memory types, each with different persistence and capacity characteristics.

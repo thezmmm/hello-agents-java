@@ -2,7 +2,7 @@ package com.helloagents.memory.tool;
 
 import com.helloagents.memory.MemoryManager;
 import com.helloagents.memory.MemoryService;
-import com.helloagents.memory.MemoryType;
+import com.helloagents.memory.core.MemoryType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

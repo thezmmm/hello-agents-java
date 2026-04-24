@@ -1,5 +1,9 @@
 package com.helloagents.memory;
 
+import com.helloagents.memory.core.ForgetStrategy;
+import com.helloagents.memory.core.MemoryEntry;
+import com.helloagents.memory.core.MemoryType;
+
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;

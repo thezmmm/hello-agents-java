@@ -1,4 +1,7 @@
-package com.helloagents.memory;
+package com.helloagents.memory.store;
+
+import com.helloagents.memory.core.MemoryEntry;
+import com.helloagents.memory.core.MemoryStore;
 
 import java.util.LinkedHashMap;
 import java.util.List;

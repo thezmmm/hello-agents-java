@@ -1,10 +1,17 @@
 package com.helloagents.memory;
 
+import com.helloagents.memory.core.MemoryEntry;
+import com.helloagents.memory.core.MemoryStore;
+import com.helloagents.memory.core.MemoryType;
+import com.helloagents.memory.store.EpisodicMemory;
+import com.helloagents.memory.store.PerceptualMemory;
+import com.helloagents.memory.store.SemanticMemory;
+import com.helloagents.memory.store.WorkingMemory;
+
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.HashMap;
 
 /**
  * Memory management layer — coordinates all cognitive memory types.

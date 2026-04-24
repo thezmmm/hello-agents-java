@@ -1,4 +1,4 @@
-package com.helloagents.memory;
+package com.helloagents.memory.core;
 
 import java.util.Map;
 

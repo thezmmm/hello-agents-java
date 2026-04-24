@@ -1,4 +1,9 @@
-package com.helloagents.memory;
+package com.helloagents.memory.store;
+
+import com.helloagents.memory.core.MemoryEntry;
+import com.helloagents.memory.core.MemoryType;
+
+import java.util.Map;
 
 /**
  * Perceptual memory — immediate sensory input, ultra-short-lived.
@@ -21,10 +26,10 @@ public class PerceptualMemory extends InMemoryStore {
     }
 
     public String add(String content, double importance) {
-        return add(content, importance, java.util.Map.of());
+        return add(content, importance, Map.of());
     }
 
-    public String add(String content, double importance, java.util.Map<String, String> metadata) {
+    public String add(String content, double importance, Map<String, String> metadata) {
         String id = WorkingMemory.newId();
         long now = System.currentTimeMillis();
         if (size() >= capacity) evictOldest();

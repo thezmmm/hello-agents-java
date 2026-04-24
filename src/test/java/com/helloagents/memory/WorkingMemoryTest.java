@@ -1,6 +1,9 @@
 package com.helloagents.memory;
 
 import com.helloagents.llm.Message;
+import com.helloagents.memory.core.MemoryEntry;
+import com.helloagents.memory.core.MemoryType;
+import com.helloagents.memory.store.WorkingMemory;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
