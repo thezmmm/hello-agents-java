@@ -56,12 +56,11 @@ hello-agents-java/
 │   │   ├── Tool                 # 工具接口
 │   │   ├── ToolRegistry         # 工具注册与分发
 │   │   └── CalculatorTool       # 内置计算器工具
-│   ├── memory/            # 四层认知记忆系统
-│   │   ├── PerceptualMemory     # 感知记忆（短暂）
-│   │   ├── WorkingMemory        # 工作记忆（容量有限）
-│   │   ├── EpisodicMemory       # 情节记忆（事件历史）
-│   │   ├── SemanticMemory       # 语义记忆（抽象知识）
+│   ├── memory/            # 认知记忆系统
+│   │   ├── core/                # 类型定义与接口（MemoryType、MemoryEntry、MemoryStore 等）
+│   │   ├── store/               # 存储实现（InMemoryStore、WorkingMemory 等四个记忆类）
 │   │   ├── MemoryManager        # 统一协调器
+│   │   ├── MemoryService        # 业务逻辑（搜索、遗忘、整合）
 │   │   └── tool/                # 9 个记忆工具
 │   ├── rag/               # RAG 系统
 │   │   ├── core/                # 数据模型与接口
@@ -165,7 +164,7 @@ agent.stream("解释一下 ReAct 框架", token -> System.out.print(token));
 
 ### ReActAgent
 
-实现 ReAct  的推理-行动框架。每次迭代经历 **Thought → Action → Observation** 三步，遇到 `Action: Finish` 时终止。
+实现ReAct推理-行动框架。每次迭代经历 **Thought → Action → Observation** 三步，遇到 `Action: Finish` 时终止。
 
 ```java
 ReActAgent agent = new ReActAgent(config);
@@ -229,8 +228,8 @@ agent.register("reverse", "反转字符串",
 
 | 记忆类型 | 容量 | 衰减策略 | 适用场景 |
 |---------|------|---------|---------|
-| **感知记忆** (Perceptual) | 短暂（~10s） | 快速衰减 | 即时感知、原始输入 |
-| **工作记忆** (Working) | ~7 条 | 按重要性排序 | 当前任务上下文 |
+| **感知记忆** (Perceptual) | 默认 5 条 | 超出容量即淘汰最旧 | 即时感知、原始输入 |
+| **工作记忆** (Working) | 默认 10 条 | TTL 过期 + 容量淘汰 | 当前任务上下文 |
 | **情节记忆** (Episodic) | 无上限 | 基于事件 | 历史事件与时序 |
 | **语义记忆** (Semantic) | 无上限 | 隐式整合 | 抽象事实与知识 |
 
@@ -241,19 +240,25 @@ MemoryManager memory = new MemoryManager();
 MemoryToolkit toolkit = new MemoryToolkit(memory);
 
 SimpleAgent agent = new SimpleAgent(config);
-toolkit.all().forEach(agent::register);
+toolkit.getTools().forEach(agent::register);
 ```
 
 ---
 
 ## RAG 系统
 
-五层检索增强生成架构，支持 200+ 文档格式（PDF、Office、HTML、图像等）：
+模块化 RAG 架构，支持 200+ 文档格式（PDF、Office、HTML、图像等），包含 8 个功能包：
 
-```
-用户/工具层 → 应用层 (RagSystem) → 管道层 (Pipeline)
-           → 存储层 (KnowledgeBase) → 基础设施层 (Embedding / Tika)
-```
+| 包 | 职责 |
+|----|------|
+| `core/` | 数据模型与接口（Document、Chunk、Embedding、VectorStore 等） |
+| `document/` | 文档解析（Apache Tika）与文本切分（固定长度 / 递归切分） |
+| `embedding/` | 向量化（OpenAI text-embedding-3-small/large） |
+| `store/` | 内存向量库与文档库实现 |
+| `retrieval/` | 检索策略（余弦相似度 + 阈值过滤） |
+| `pipeline/` | 索引管道（解析→切分→向量化→存储）和查询管道 |
+| `app/` | `RagSystem` 统一门面 |
+| `tool/` | Agent 可调用的 RAG 工具（rag_add / rag_search / rag_ask） |
 
 **快速使用：**
 
@@ -279,7 +284,7 @@ String answer = rag.ask("Java 17 中 record 类有什么用？");
 ```java
 RagToolkit ragToolkit = new RagToolkit(rag, config);
 SimpleAgent agent = new SimpleAgent(config);
-ragToolkit.all().forEach(agent::register);
+ragToolkit.getTools().forEach(agent::register);
 
 // Agent 现在可以自主调用 rag_add / rag_search / rag_ask
 agent.chat("帮我查一下文档里关于 record 的内容");
