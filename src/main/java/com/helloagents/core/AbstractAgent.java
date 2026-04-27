@@ -59,4 +59,9 @@ public abstract class AbstractAgent implements BaseAgent, ToolSupport {
     public List<String> listTools() {
         return toolRegistry == null ? List.of() : toolRegistry.list();
     }
+
+    @Override
+    public ToolRegistry getToolRegistry() {
+        return toolRegistry;
+    }
 }

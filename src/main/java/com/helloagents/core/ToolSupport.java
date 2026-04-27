@@ -1,6 +1,7 @@
 package com.helloagents.core;
 
 import com.helloagents.tools.Tool;
+import com.helloagents.tools.ToolRegistry;
 
 import java.util.List;
 
@@ -28,4 +29,7 @@ public interface ToolSupport {
 
     /** Returns the names of all registered tools in registration order. */
     List<String> listTools();
+
+    /** Returns the underlying {@link ToolRegistry}, or {@code null} if no tool has been added yet. */
+    ToolRegistry getToolRegistry();
 }
