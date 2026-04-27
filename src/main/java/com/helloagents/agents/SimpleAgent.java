@@ -124,10 +124,10 @@ public class SimpleAgent extends AbstractAgent {
                 break;
             }
 
-            // strip markers and record the clean assistant turn
+            // replace markers with readable placeholders so the LLM retains context
             String cleanResponse = response;
             for (ToolCall call : toolCalls) {
-                cleanResponse = cleanResponse.replace(call.original(), "");
+                cleanResponse = cleanResponse.replace(call.original(), "[called " + call.toolName() + "]");
             }
             messages.add(Message.assistant(cleanResponse.strip()));
 
@@ -167,7 +167,7 @@ public class SimpleAgent extends AbstractAgent {
 
             String cleanResponse = response;
             for (ToolCall call : toolCalls) {
-                cleanResponse = cleanResponse.replace(call.original(), "");
+                cleanResponse = cleanResponse.replace(call.original(), "[called " + call.toolName() + "]");
             }
             messages.add(Message.assistant(cleanResponse.strip()));
             for (ToolCall call : toolCalls) {
