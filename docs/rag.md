@@ -257,14 +257,14 @@ void clear()                            // 清空所有状态的文档和 chunk
 
 ## 工具调用格式
 
-遵循项目统一的 `[TOOL_CALL:tool_name:parameters]` 格式。
+遵循项目统一的 `[TOOL_CALL:tool_name:{"param":"value"}]` JSON 格式，详见 [tool-calling.md](tool-calling.md)。
 
-| 工具名 | 参数格式 | 说明 |
+| 工具名 | 示例调用 | 说明 |
 |--------|----------|------|
-| `rag_add` | `source=<名称>\|content=<文本>` | 添加文本到知识库 |
-| `rag_add` | `file=<路径>` | 索引本地文件（PDF/DOCX/XLSX/HTML 等） |
-| `rag_search` | `query=<问题>\|topk=5` | 语义搜索，返回相关段落 |
-| `rag_ask` | `question=<问题>\|topk=3` | 检索增强问答，返回 LLM 生成答案 |
+| `rag_add` | `{"source":"intro","content":"Java 运行在 JVM 上"}` | 添加文本到知识库 |
+| `rag_add` | `{"file":"/path/to/report.pdf"}` | 索引本地文件（PDF/DOCX/XLSX/HTML 等） |
+| `rag_search` | `{"query":"JVM 内存管理","topk":5}` | 语义搜索，返回相关段落 |
+| `rag_ask` | `{"question":"Java 的垃圾回收机制是什么？","topk":3}` | 检索增强问答，返回 LLM 生成答案 |
 
 ---
 
