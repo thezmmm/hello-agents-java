@@ -19,7 +19,7 @@ public class MemoryRemoveTool implements Tool {
 
     @Override
     public String description() {
-        return "Delete a specific memory entry. Input: the entry ID returned by memory_add.";
+        return "Delete a specific memory entry by its ID (returned by memory_add).";
     }
 
     @Override

@@ -21,8 +21,7 @@ public class RagAddTool implements Tool {
 
     @Override
     public String description() {
-        return "Add a document to the RAG knowledge base. " +
-               "Text: source=<name>|content=<text>  File: file=<path>";
+        return "Add a document or local file to the RAG knowledge base for later retrieval.";
     }
 
     @Override

@@ -24,9 +24,7 @@ public class MemorySearchTool implements Tool {
 
     @Override
     public String description() {
-        return "Search memories by keyword. "
-                + "Input: query=<keyword> or query=<keyword>|type=<type>. "
-                + "Results are sorted by importance descending.";
+        return "Search stored memories by keyword, optionally filtered by type. Results are sorted by importance.";
     }
 
     @Override

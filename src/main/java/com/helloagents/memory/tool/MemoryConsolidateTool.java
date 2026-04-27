@@ -21,9 +21,7 @@ public class MemoryConsolidateTool implements Tool {
 
     @Override
     public String description() {
-        return "Promote short-lived memories to longer-term storage: "
-                + "perceptual(importance>=0.5)->working, working(importance>=0.7)->episodic/semantic. "
-                + "No input required.";
+        return "Promote high-importance short-lived memories to longer-term storage (perceptual → working → episodic/semantic).";
     }
 
     @Override public ToolParameter parameters() { return ToolParameter.empty(); }

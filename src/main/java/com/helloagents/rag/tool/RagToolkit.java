@@ -5,6 +5,7 @@ import com.helloagents.rag.app.RagSystem;
 import com.helloagents.rag.core.EmbeddingModel;
 import com.helloagents.rag.core.KnowledgeBase;
 import com.helloagents.tools.Tool;
+import com.helloagents.tools.Toolkit;
 import com.helloagents.tools.ToolRegistry;
 
 import java.util.LinkedHashMap;
@@ -12,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 /** 工厂：创建并注册所有 RAG 工具（rag_add / rag_search / rag_ask） */
-public class RagToolkit {
+public class RagToolkit implements Toolkit {
 
     private final RagSystem ragSystem;
     private final List<Tool> tools;
@@ -26,12 +27,11 @@ public class RagToolkit {
         );
     }
 
-    public void registerAll(ToolRegistry registry) {
-        tools.forEach(registry::register);
-    }
+    @Override public String name()        { return "rag"; }
+    @Override public String description() { return "Tools for adding documents, searching, and answering questions via retrieval-augmented generation"; }
 
-    public RagSystem getRagSystem() { return ragSystem; }
-    public List<Tool> getTools()    { return tools; }
+    public RagSystem getRagSystem()        { return ragSystem; }
+    @Override public List<Tool> getTools() { return tools; }
 
     /** 解析 key=value|key2=value2 格式的参数字符串 */
     static Map<String, String> parseParams(String input) {

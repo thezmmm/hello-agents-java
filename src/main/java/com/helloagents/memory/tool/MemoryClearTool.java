@@ -17,7 +17,7 @@ public class MemoryClearTool implements Tool {
 
     @Override
     public String description() {
-        return "Clear all memories across every type store. No input required. Use with caution.";
+        return "Erase every memory entry across all types. This action is irreversible — use with caution.";
     }
 
     @Override public ToolParameter parameters() { return ToolParameter.empty(); }

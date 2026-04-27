@@ -3,6 +3,7 @@ package com.helloagents.memory.tool;
 import com.helloagents.memory.MemoryManager;
 import com.helloagents.memory.MemoryService;
 import com.helloagents.tools.Tool;
+import com.helloagents.tools.Toolkit;
 import com.helloagents.tools.ToolRegistry;
 
 import java.util.List;
@@ -17,7 +18,7 @@ import java.util.List;
  *   kit.registerAll(toolRegistry);
  * </pre>
  */
-public class MemoryToolkit {
+public class MemoryToolkit implements Toolkit {
 
     private final MemoryManager manager;
     private final MemoryService  service;
@@ -43,11 +44,10 @@ public class MemoryToolkit {
         );
     }
 
+    @Override public String name()        { return "memory"; }
+    @Override public String description() { return "Tools for storing, searching, updating, and managing agent memory"; }
+
     public MemoryManager getManager() { return manager; }
     public MemoryService  getService() { return service; }
-    public List<Tool>     getTools()   { return tools; }
-
-    public void registerAll(ToolRegistry registry) {
-        tools.forEach(registry::register);
-    }
+    @Override public List<Tool> getTools() { return tools; }
 }

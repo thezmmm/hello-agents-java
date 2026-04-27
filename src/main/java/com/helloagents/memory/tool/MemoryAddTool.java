@@ -21,9 +21,7 @@ public class MemoryAddTool implements Tool {
 
     @Override
     public String description() {
-        return "Add a new memory entry. "
-                + "Input: type=<perceptual|working|episodic|semantic>|content=<text>|importance=<0.0-1.0>. "
-                + "Returns the generated entry ID.";
+        return "Store a new memory entry and return its ID. Use the ID later to update or remove it.";
     }
 
     @Override

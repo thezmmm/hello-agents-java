@@ -15,7 +15,7 @@ public class RagAskTool implements Tool {
 
     @Override
     public String description() {
-        return "Ask a question answered by the RAG knowledge base (retrieval + LLM). Input: question=<question>|topk=3";
+        return "Answer a question using the RAG knowledge base — retrieves relevant context then generates a grounded response.";
     }
 
     @Override

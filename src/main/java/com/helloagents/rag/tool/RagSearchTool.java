@@ -17,7 +17,7 @@ public class RagSearchTool implements Tool {
 
     @Override
     public String description() {
-        return "Semantic search in the RAG knowledge base. Input: query=<question>|topk=5";
+        return "Search the RAG knowledge base by semantic similarity and return the most relevant passages.";
     }
 
     @Override

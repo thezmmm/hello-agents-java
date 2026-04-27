@@ -21,8 +21,7 @@ public class MemoryUpdateTool implements Tool {
 
     @Override
     public String description() {
-        return "Update an existing memory entry's content and importance. "
-                + "Input: id=<entry-id>|content=<new text>|importance=<0.0-1.0>.";
+        return "Update the content or importance of an existing memory entry by its ID.";
     }
 
     @Override

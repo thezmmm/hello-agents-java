@@ -15,7 +15,7 @@ public class CalculatorTool implements Tool {
 
     @Override
     public String description() {
-        return "Evaluate a mathematical expression. Input: a math expression string, e.g. (3 + 5) * 2";
+        return "Evaluate a mathematical expression and return the numeric result.";
     }
 
     @Override

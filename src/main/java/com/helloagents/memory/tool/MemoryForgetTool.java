@@ -24,15 +24,13 @@ public class MemoryForgetTool implements Tool {
 
     @Override
     public String description() {
-        return "Evict memories by a forgetting strategy. "
-                + "Input: strategy=<lru|lfu|oldest|lowest_importance>|count=<n>. "
-                + "lru=least recently used, lfu=least frequently used.";
+        return "Evict a number of memory entries using a chosen forgetting strategy.";
     }
 
     @Override
     public ToolParameter parameters() {
         return ToolParameter.of(
-            Param.required("strategy", "Eviction strategy: lru | lfu | oldest | lowest_importance", "string"),
+            Param.required("strategy", "Eviction strategy: lru (least recently used) | lfu (least frequently used) | oldest | lowest_importance", "string"),
             Param.optional("count",    "Number of entries to evict, default 1", "number")
         );
     }

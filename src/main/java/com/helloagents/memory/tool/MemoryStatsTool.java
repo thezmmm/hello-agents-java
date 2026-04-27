@@ -19,8 +19,7 @@ public class MemoryStatsTool implements Tool {
 
     @Override
     public String description() {
-        return "Return memory statistics: total count, per-type counts, average importance, "
-                + "most-accessed entry. No input required.";
+        return "Show memory statistics: total and per-type entry counts, average importance, and most-accessed entry.";
     }
 
     @Override public ToolParameter parameters() { return ToolParameter.empty(); }

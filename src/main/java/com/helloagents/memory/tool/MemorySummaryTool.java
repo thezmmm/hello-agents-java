@@ -22,8 +22,7 @@ public class MemorySummaryTool implements Tool {
 
     @Override
     public String description() {
-        return "List all memories grouped by type (perceptual, working, episodic, semantic), "
-                + "sorted by importance within each group. No input required.";
+        return "List all stored memories grouped by type, sorted by importance within each group.";
     }
 
     @Override public ToolParameter parameters() { return ToolParameter.empty(); }
