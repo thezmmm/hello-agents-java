@@ -5,6 +5,7 @@ import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolParameter;
 
 import java.nio.file.Path;
+import java.util.Map;
 
 /**
  * Tool: rag_add
@@ -34,8 +35,7 @@ public class RagAddTool implements Tool {
     }
 
     @Override
-    public String execute(String input) {
-        var params = RagToolkit.parseParams(input);
+    public String execute(Map<String, String> params) {
         String file = params.get("file");
         if (file != null && !file.isBlank()) {
             try {

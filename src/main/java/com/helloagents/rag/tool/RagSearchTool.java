@@ -4,6 +4,7 @@ import com.helloagents.rag.app.RagSystem;
 import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolParameter;
 
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /** Tool: rag_search — 语义搜索，返回相关段落 */
@@ -29,8 +30,7 @@ public class RagSearchTool implements Tool {
     }
 
     @Override
-    public String execute(String input) {
-        var params = RagToolkit.parseParams(input);
+    public String execute(Map<String, String> params) {
         String query = params.get("query");
         if (query == null || query.isBlank()) return "Error: query is required";
         int topK = parseIntOrDefault(params.get("topk"), 3);

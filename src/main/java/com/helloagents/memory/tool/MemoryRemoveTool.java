@@ -5,6 +5,7 @@ import com.helloagents.memory.MemoryService;
 import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolParameter;
 import com.helloagents.tools.ToolParameter.Param;
+import java.util.Map;
 
 /** Delete a specific memory entry. Input: the entry ID. */
 public class MemoryRemoveTool implements Tool {
@@ -28,12 +29,9 @@ public class MemoryRemoveTool implements Tool {
     }
 
     @Override
-    public String execute(String input) {
-        String id = input == null ? "" : input.strip();
-        if (id.contains("=")) {
-            id = MemoryService.parseParams(input).getOrDefault("id", "");
-        }
-        if (id.isBlank()) return "Error: entry ID is required.";
+    public String execute(Map<String, String> params) {
+        String id = params.getOrDefault("id", "").strip();
+        if (id.isBlank()) return "Error: 'id' is required.";
         return manager.remove(id)
                 ? "Memory removed. id=" + id
                 : "Error: no memory found with id=" + id;

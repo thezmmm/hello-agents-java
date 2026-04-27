@@ -28,7 +28,7 @@ public class MemorySummaryTool implements Tool {
     @Override public ToolParameter parameters() { return ToolParameter.empty(); }
 
     @Override
-    public String execute(String input) {
+    public String execute(java.util.Map<String, String> params) {
         Map<MemoryType, List<MemoryEntry>> byType = service.summary();
         StringBuilder sb = new StringBuilder("=== Memory Summary ===");
         for (MemoryType t : MemoryType.values()) {

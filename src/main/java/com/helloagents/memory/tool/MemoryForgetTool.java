@@ -36,8 +36,7 @@ public class MemoryForgetTool implements Tool {
     }
 
     @Override
-    public String execute(String input) {
-        Map<String, String> p = MemoryService.parseParams(input);
+    public String execute(Map<String, String> p) {
         ForgetStrategy strategy;
         try {
             strategy = ForgetStrategy.fromString(p.getOrDefault("strategy", "lru"));

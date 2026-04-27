@@ -34,8 +34,7 @@ public class MemoryUpdateTool implements Tool {
     }
 
     @Override
-    public String execute(String input) {
-        Map<String, String> p = MemoryService.parseParams(input);
+    public String execute(Map<String, String> p) {
         String id      = p.get("id");
         String content = p.get("content");
         if (id == null || id.isBlank())          return "Error: 'id' is required.";

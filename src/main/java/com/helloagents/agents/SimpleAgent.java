@@ -211,9 +211,7 @@ public class SimpleAgent extends AbstractAgent {
 
                 ## Tool Call Format
                 When you need to use a tool, embed this exact tag in your response:
-                `[TOOL_CALL:tool_name:parameters]`
-                Example: `[TOOL_CALL:calculator:1+2*3]`
-
+                `[TOOL_CALL:tool_name:{"param":"value"}]`
                 Tool results will be provided automatically. You may then continue your answer.
                 """;
     }
@@ -240,7 +238,7 @@ public class SimpleAgent extends AbstractAgent {
      */
     protected String executeToolCall(ToolCall call) {
         if (toolRegistry == null) return "Error: no tool registry configured.";
-        return toolRegistry.execute(call.toolName(), call.parameters());
+        return toolRegistry.execute(call);
     }
 
 }

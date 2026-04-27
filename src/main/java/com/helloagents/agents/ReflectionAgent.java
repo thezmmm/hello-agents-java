@@ -139,7 +139,7 @@ public class ReflectionAgent extends AbstractAgent implements ToolSupport {
             String clean = stripToolCalls(response, toolCalls);
             messages.add(Message.assistant(clean));
             for (ToolCall call : toolCalls) {
-                String observation = "Observation: " + toolRegistry.execute(call.toolName(), call.parameters());
+                String observation = "Observation: " + toolRegistry.execute(call);
                 onToken.accept("\n" + observation + "\n");
                 messages.add(Message.user(observation));
             }
@@ -166,7 +166,7 @@ public class ReflectionAgent extends AbstractAgent implements ToolSupport {
             String clean = stripToolCalls(response, toolCalls);
             messages.add(Message.assistant(clean));
             for (ToolCall call : toolCalls) {
-                messages.add(Message.user("Observation: " + toolRegistry.execute(call.toolName(), call.parameters())));
+                messages.add(Message.user("Observation: " + toolRegistry.execute(call)));
             }
         }
         return llm.chat(messages);
@@ -203,7 +203,8 @@ public class ReflectionAgent extends AbstractAgent implements ToolSupport {
 
 
                 ## Tool Call Format
-                `[TOOL_CALL:tool_name:parameters]`
+                When you need to use a tool, embed this exact tag in your response:
+                `[TOOL_CALL:tool_name:{"param":"value"}]`
                 Tool results will be provided automatically. You may then continue your answer.
                 """;
     }

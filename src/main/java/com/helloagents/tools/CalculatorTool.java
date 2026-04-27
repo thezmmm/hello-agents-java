@@ -1,5 +1,6 @@
 package com.helloagents.tools;
 
+import java.util.Map;
 
 /**
  * Simple calculator tool — evaluates a mathematical expression string.
@@ -26,17 +27,17 @@ public class CalculatorTool implements Tool {
     }
 
     @Override
-    public String execute(String input) {
-        // Use Nashorn (Java 8-14) or Rhino fallback. For Java 17, use a simple parser.
+    public String execute(Map<String, String> params) {
+        String expr = params.getOrDefault("expression", "").strip();
+        if (expr.isBlank()) return "Error: 'expression' is required.";
         try {
-            double result = evalSimple(input.strip());
-            // Return integer if no fractional part
+            double result = evalSimple(expr);
             if (result == Math.floor(result) && !Double.isInfinite(result)) {
                 return String.valueOf((long) result);
             }
             return String.valueOf(result);
         } catch (Exception e) {
-            return "Error: could not evaluate expression: " + input;
+            return "Error: could not evaluate expression: " + expr;
         }
     }
 

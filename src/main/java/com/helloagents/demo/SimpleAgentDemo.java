@@ -84,14 +84,15 @@ public class SimpleAgentDemo {
         printHeader("4. Function Registration");
 
         // register via lambda — no Tool class needed
+        var textParam = ToolParameter.of(ToolParameter.Param.required("text", "Input text", "string"));
         var registry = new ToolRegistry()
-                .register("uppercase", "Converts text to uppercase",
-                        String::toUpperCase)
+                .register("uppercase", "Converts text to uppercase", textParam,
+                        params -> params.getOrDefault("text", "").toUpperCase())
                 .register("word_count", "Counts the number of words in the given text",
                         ToolParameter.of(ToolParameter.Param.required("text", "Text to count words in", "string")),
-                        input -> String.valueOf(input.trim().split("\\s+").length))
-                .register("reverse", "Reverses the characters in a string",
-                        input -> new StringBuilder(input).reverse().toString());
+                        params -> String.valueOf(params.getOrDefault("text", "").trim().split("\\s+").length))
+                .register("reverse", "Reverses the characters in a string", textParam,
+                        params -> new StringBuilder(params.getOrDefault("text", "")).reverse().toString());
 
         var agent = new SimpleAgent("FunctionAgent", llm, null, registry);
         System.out.println("Tools: " + agent.listTools());

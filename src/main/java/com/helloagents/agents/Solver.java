@@ -87,7 +87,7 @@ public class Solver {
 
             history.add(Message.assistant(stripToolCalls(response, toolCalls)));
             for (ToolCall call : toolCalls) {
-                history.add(Message.user("Observation: " + toolRegistry.execute(call.toolName(), call.parameters())));
+                history.add(Message.user("Observation: " + toolRegistry.execute(call)));
             }
         }
         return llm.chat(history);
@@ -107,7 +107,7 @@ public class Solver {
 
             history.add(Message.assistant(stripToolCalls(response, toolCalls)));
             for (ToolCall call : toolCalls) {
-                String observation = "Observation: " + toolRegistry.execute(call.toolName(), call.parameters());
+                String observation = "Observation: " + toolRegistry.execute(call);
                 onToken.accept("\n" + observation + "\n");
                 history.add(Message.user(observation));
             }
@@ -148,7 +148,9 @@ public class Solver {
 
 
                 ## Tool Call Format
-                `[TOOL_CALL:tool_name:parameters]`
+                When you need to use a tool, embed this exact tag in your response:
+                `[TOOL_CALL:tool_name:{"param":"value"}]`
+                Tool results will be provided automatically. You may then continue your answer.
                 """;
     }
 

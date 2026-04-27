@@ -1,7 +1,9 @@
 package com.helloagents.tools;
 
+import java.util.Map;
+
 /**
- * A tool that an agent can call by name with a string input.
+ * A tool that an agent can call by name with parsed parameters.
  */
 public interface Tool {
 
@@ -22,10 +24,12 @@ public interface Tool {
     }
 
     /**
-     * Execute the tool with the given input string.
+     * Execute the tool with pre-parsed parameters.
+     * Parameters are already extracted from the JSON in the LLM response by
+     * {@link ToolRegistry#parseToolCalls}; implementations just call {@code params.get("key")}.
      *
-     * @param input raw input from the LLM
+     * @param params key→value map parsed from the tool call's JSON parameter block
      * @return result string fed back to the LLM as an Observation
      */
-    String execute(String input);
+    String execute(Map<String, String> params);
 }

@@ -213,19 +213,6 @@ public class MemoryService {
                 || s.contains("\u662f") || s.contains("\u5b9a\u4e49");
     }
 
-    public static Map<String, String> parseParams(String input) {
-        Map<String, String> params = new LinkedHashMap<>();
-        if (input == null || input.isBlank()) return params;
-        for (String part : input.split("\\|", -1)) {
-            int eq = part.indexOf('=');
-            if (eq > 0) {
-                params.put(part.substring(0, eq).strip().toLowerCase(),
-                           part.substring(eq + 1).strip());
-            }
-        }
-        return params;
-    }
-
     public static double parseDouble(String value, double fallback) {
         if (value == null) return fallback;
         try { return Double.parseDouble(value.strip()); }

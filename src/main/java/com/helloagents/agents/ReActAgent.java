@@ -49,7 +49,7 @@ public class ReActAgent extends AbstractAgent {
 
             At each step, respond in this exact format:
             Thought: <your reasoning about what to do next>
-            Action: [TOOL_CALL:tool_name:input]
+            Action: [TOOL_CALL:tool_name:{"param":"value"}]
 
             When you have enough information to answer the user, respond with:
             Thought: <your final answer>
@@ -114,7 +114,7 @@ public class ReActAgent extends AbstractAgent {
             List<ToolCall> toolCalls = hasTools() ? toolRegistry.parseToolCalls(response) : List.of();
             if (!toolCalls.isEmpty()) {
                 for (ToolCall call : toolCalls) {
-                    String observation = toolRegistry.execute(call.toolName(), call.parameters());
+                    String observation = toolRegistry.execute(call);
                     workingHistory.add(Message.user("Observation: " + observation));
                 }
             } else {
@@ -154,7 +154,7 @@ public class ReActAgent extends AbstractAgent {
             List<ToolCall> toolCalls = hasTools() ? toolRegistry.parseToolCalls(response) : List.of();
             if (!toolCalls.isEmpty()) {
                 for (ToolCall call : toolCalls) {
-                    String observation = toolRegistry.execute(call.toolName(), call.parameters());
+                    String observation = toolRegistry.execute(call);
                     String observationLine = "\nObservation: " + observation + "\n";
                     fullOutput.append(observationLine);
                     onToken.accept(observationLine);

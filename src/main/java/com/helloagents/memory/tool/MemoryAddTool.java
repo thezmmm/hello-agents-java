@@ -36,8 +36,7 @@ public class MemoryAddTool implements Tool {
     }
 
     @Override
-    public String execute(String input) {
-        Map<String, String> p = MemoryService.parseParams(input);
+    public String execute(Map<String, String> p) {
         String content = p.get("content");
         if (content == null || content.isBlank()) return "Error: 'content' is required.";
 

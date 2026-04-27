@@ -65,14 +65,14 @@ public class ToolkitLoaderTool implements Tool {
     public ToolParameter parameters() {
         return ToolParameter.of(
             ToolParameter.Param.required("toolkit",
-                "Name of the toolkit to load (e.g. 'memory', 'rag'), or 'list' to enumerate options",
+                "Name of the toolkit to load, e.g. \"memory\" or \"rag\". Pass \"list\" to enumerate available toolkits.",
                 "string")
         );
     }
 
     @Override
-    public String execute(String input) {
-        String cmd = input == null ? "" : input.strip();
+    public String execute(Map<String, String> params) {
+        String cmd = params.getOrDefault("toolkit", "");
         if (cmd.isBlank() || cmd.equalsIgnoreCase("list")) {
             return describeAvailable();
         }

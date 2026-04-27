@@ -27,7 +27,7 @@ public class MemoryConsolidateTool implements Tool {
     @Override public ToolParameter parameters() { return ToolParameter.empty(); }
 
     @Override
-    public String execute(String input) {
+    public String execute(java.util.Map<String, String> params) {
         List<MemoryEntry> promoted = service.consolidate();
         if (promoted.isEmpty()) return "No memories eligible for consolidation.";
         return "Consolidated %d memory(s):\n".formatted(promoted.size())

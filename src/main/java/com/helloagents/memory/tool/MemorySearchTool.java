@@ -36,8 +36,7 @@ public class MemorySearchTool implements Tool {
     }
 
     @Override
-    public String execute(String input) {
-        Map<String, String> p = MemoryService.parseParams(input);
+    public String execute(Map<String, String> p) {
         String query = p.get("query");
         if (query == null || query.isBlank()) return "Error: 'query' is required.";
 

@@ -4,6 +4,8 @@ import com.helloagents.rag.app.RagSystem;
 import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolParameter;
 
+import java.util.Map;
+
 /** Tool: rag_ask — 检索增强问答 */
 public class RagAskTool implements Tool {
 
@@ -27,8 +29,7 @@ public class RagAskTool implements Tool {
     }
 
     @Override
-    public String execute(String input) {
-        var params = RagToolkit.parseParams(input);
+    public String execute(Map<String, String> params) {
         String question = params.get("question");
         if (question == null || question.isBlank()) return "Error: question is required";
         int topK = parseIntOrDefault(params.get("topk"), 3);

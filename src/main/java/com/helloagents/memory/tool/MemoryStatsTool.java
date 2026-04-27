@@ -25,7 +25,7 @@ public class MemoryStatsTool implements Tool {
     @Override public ToolParameter parameters() { return ToolParameter.empty(); }
 
     @Override
-    public String execute(String input) {
+    public String execute(java.util.Map<String, String> params) {
         return "=== Memory Stats ===\n"
                 + service.stats().entrySet().stream()
                         .map(e -> "  %s: %s".formatted(e.getKey(), e.getValue()))

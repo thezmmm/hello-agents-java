@@ -23,7 +23,7 @@ public class MemoryClearTool implements Tool {
     @Override public ToolParameter parameters() { return ToolParameter.empty(); }
 
     @Override
-    public String execute(String input) {
+    public String execute(java.util.Map<String, String> params) {
         manager.clearAll();
         return "All memories cleared.";
     }
