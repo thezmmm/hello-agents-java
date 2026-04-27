@@ -1,7 +1,5 @@
 package com.helloagents.rag.app;
 
-import com.helloagents.llm.LlmClient;
-import com.helloagents.llm.Message;
 import com.helloagents.rag.core.Document;
 import com.helloagents.rag.core.EmbeddingModel;
 import com.helloagents.rag.core.KnowledgeBase;
@@ -13,46 +11,35 @@ import com.helloagents.rag.retrieval.Retriever;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * RAG 系统统一门面，整合文档管理、语义搜索、检索增强问答。
+ * RAG 系统统一门面，整合文档管理与语义检索。
  *
  * <pre>
  * var kb  = new KnowledgeBase(new InMemoryDocumentStore(), new InMemoryVectorStore());
- * var rag = new RagSystem(embeddingModel, kb, llm);
+ * var rag = new RagSystem(embeddingModel, kb);
  *
  * rag.addDocument("readme.txt", content);
  * rag.addFile(Path.of("report.pdf"));
  * List&lt;SearchResult&gt; hits = rag.search("JVM 内存模型");
- * String answer = rag.ask("Java 的垃圾回收机制是什么？");
  * </pre>
  */
 public class RagSystem {
 
-    private static final String SYSTEM_PROMPT = """
-            You are a helpful assistant. Answer the user's question based ONLY on the provided context.
-            If the context does not contain enough information, say so honestly.
-            Do not make up information.""";
+    private final KnowledgeBase  kb;
+    private final IndexPipeline  indexPipeline;
+    private final QueryPipeline  queryPipeline;
 
-    private final KnowledgeBase kb;
-    private final IndexPipeline indexPipeline;
-    private final QueryPipeline queryPipeline;
-    private final LlmClient llm;
-
-    public RagSystem(EmbeddingModel embeddingModel, KnowledgeBase kb, LlmClient llm) {
-        this.kb = kb;
+    public RagSystem(EmbeddingModel embeddingModel, KnowledgeBase kb) {
+        this.kb            = kb;
         this.indexPipeline = new IndexPipeline(embeddingModel, kb);
         this.queryPipeline = new QueryPipeline(embeddingModel, kb);
-        this.llm = llm;
     }
 
-    public RagSystem(EmbeddingModel embeddingModel, KnowledgeBase kb,
-                     LlmClient llm, TextSplitter splitter) {
-        this.kb = kb;
+    public RagSystem(EmbeddingModel embeddingModel, KnowledgeBase kb, TextSplitter splitter) {
+        this.kb            = kb;
         this.indexPipeline = new IndexPipeline(embeddingModel, kb, splitter);
         this.queryPipeline = new QueryPipeline(embeddingModel, kb);
-        this.llm = llm;
     }
 
     // ── 管理 ─────────────────────────────────────────────────────────────────
@@ -81,33 +68,13 @@ public class RagSystem {
     /** 清空整个知识库 */
     public void clear() { kb.clear(); }
 
-    // ── 搜索 ─────────────────────────────────────────────────────────────────
+    // ── 检索 ─────────────────────────────────────────────────────────────────
 
     public List<SearchResult> search(String query, int topK) {
         return queryPipeline.query(query, topK);
     }
 
     public List<SearchResult> search(String query) {
-        return queryPipeline.query(query);
-    }
-
-    // ── 问答 ─────────────────────────────────────────────────────────────────
-
-    public String ask(String question, int topK) {
-        List<SearchResult> results = search(question, topK);
-        String userMessage = results.isEmpty()
-                ? question
-                : "Context:\n" + buildContext(results) + "\n\nQuestion: " + question;
-        return llm.chat(List.of(Message.system(SYSTEM_PROMPT), Message.user(userMessage)));
-    }
-
-    public String ask(String question) {
-        return ask(question, Retriever.DEFAULT_TOP_K);
-    }
-
-    private static String buildContext(List<SearchResult> results) {
-        return results.stream()
-                .map(r -> "[Score: %.3f] %s".formatted(r.score(), r.content()))
-                .collect(Collectors.joining("\n\n---\n\n"));
+        return queryPipeline.query(query, Retriever.DEFAULT_TOP_K);
     }
 }
