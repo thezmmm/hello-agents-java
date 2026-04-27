@@ -17,13 +17,12 @@ public class RagDemo {
 
     public static void main(String[] args) {
         var embeddingModel = OpenAiEmbeddingModel.fromEnv();
-        var llm            = LlmClient.fromEnv();
 
         // ── 场景 1：直接使用 RagSystem ─────────────────────────────────────
         System.out.println("=== 场景 1：RagSystem ===\n");
 
         var kb  = new KnowledgeBase(new InMemoryDocumentStore(), new InMemoryVectorStore());
-        var rag = new RagSystem(embeddingModel, kb, llm);
+        var rag = new RagSystem(embeddingModel, kb);
 
         String docId = rag.addDocument("java-intro.txt", """
                 Java 是一种面向对象的编程语言，由 Sun Microsystems 于 1995 年发布。
@@ -38,14 +37,12 @@ public class RagDemo {
         rag.search("JVM 内存管理", 2)
            .forEach(r -> System.out.printf("[%.3f] %s%n", r.score(), r.content()));
 
-        System.out.println("\n--- RAG 问答 ---");
-        System.out.println(rag.ask("Java 的垃圾回收机制是什么？"));
-
         // ── 场景 2：集成进 Agent ─────────────────────────────────────────────
         System.out.println("\n=== 场景 2：RagToolkit + SimpleAgent ===\n");
 
+        var llm     = LlmClient.fromEnv();
         var kb2     = new KnowledgeBase(new InMemoryDocumentStore(), new InMemoryVectorStore());
-        var toolkit = new RagToolkit(embeddingModel, kb2, llm);
+        var toolkit = new RagToolkit(embeddingModel, kb2);
         var rag2    = toolkit.getRagSystem();
         var agent   = new SimpleAgent(llm);
         toolkit.getTools().forEach(agent::addTool);
@@ -59,7 +56,7 @@ public class RagDemo {
                 Python 使用动态类型和垃圾回收机制，支持多种编程范式。
                 CPython 是最常见的 Python 实现，代码运行在解释器上。
 
-                然后回答：Python 的内存管理是如何工作的？
+                然后搜索：Python 的内存管理是如何工作的？
                 """);
 
         System.out.printf("【运行后】文档数: %d  chunk数: %d%n",
