@@ -64,7 +64,7 @@ public final class ContextPacket {
     public static final class Builder {
 
         private final String content;
-        private double relevanceScore = 1.0;
+        private double relevanceScore = 0.5;
         private int    tokenEstimate  = 0;
         private Instant createdAt     = Instant.now();
         private Map<String, String> metadata = Map.of();

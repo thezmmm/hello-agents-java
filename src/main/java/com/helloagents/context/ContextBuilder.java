@@ -123,21 +123,19 @@ public final class ContextBuilder {
             }
         }
 
-        // memory: relevance defaults to 0.5 so select recalculates via user query
+        // memory: no explicit relevance → defaults to 0.5, select recalculates via user query
         if (memory != null && userQuery != null && !userQuery.isBlank()) {
             memory.search(userQuery, memoryLimit, memoryMinImportance, memoryTypes).forEach(entry ->
                     all.add(ContextPacket.of(entry.content())
-                            .withRelevance(0.5)
                             .withCreatedAt(Instant.ofEpochMilli(entry.createdAt()))
                             .withTokenEstimate(estimateTokens(entry.content()))
                             .build()));
         }
 
-        // RAG: relevance defaults to 0.5 so select recalculates via user query
+        // RAG: no explicit relevance → defaults to 0.5, select recalculates via user query
         if (rag != null && userQuery != null && !userQuery.isBlank()) {
             rag.search(userQuery, ragTopK, ragMinScore).forEach(result ->
                     all.add(ContextPacket.of(result.content())
-                            .withRelevance(0.5)
                             .withTokenEstimate(estimateTokens(result.content()))
                             .build()));
         }
