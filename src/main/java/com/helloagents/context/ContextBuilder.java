@@ -79,10 +79,10 @@ public final class ContextBuilder {
             String systemInstructions,
             List<String> conversationHistory,
             List<ContextPacket> customPackets) {
-        List<ContextPacket> gathered   = gather(userQuery, systemInstructions, conversationHistory, customPackets);
-        List<ContextPacket> selected   = select(gathered, userQuery);
-        List<ContextPacket> compressed = compress(selected);
-        return structure(compressed, userQuery);
+        List<ContextPacket> gathered  = gather(userQuery, systemInstructions, conversationHistory, customPackets);
+        List<ContextPacket> selected  = select(gathered, userQuery);
+        String              structured = structure(selected, userQuery);
+        return compress(structured);
     }
 
     /** Convenience overload — only user query, no extra context. */
@@ -167,7 +167,7 @@ public final class ContextBuilder {
                 .filter(p -> !"system_instruction".equals(p.metadata().get("type")))
                 .collect(Collectors.toList());
 
-        int systemTokens    = systemPackets.stream().mapToInt(ContextBuilder::tokenEstimate).sum();
+        int systemTokens    = systemPackets.stream().mapToInt(ContextBuilder::estimateTokens).sum();
         int remainingTokens = config.availableTokens() - systemTokens;
 
         if (remainingTokens <= 0) return systemPackets;
@@ -190,7 +190,7 @@ public final class ContextBuilder {
         List<ContextPacket> selected = new ArrayList<>(systemPackets);
         int used = systemTokens;
         for (Map.Entry<Double, ContextPacket> e : scored) {
-            int tokens = ContextBuilder.tokenEstimate(e.getValue());
+            int tokens = estimateTokens(e.getValue());
             if (used + tokens <= config.availableTokens()) {
                 selected.add(e.getValue());
                 used += tokens;
@@ -200,14 +200,33 @@ public final class ContextBuilder {
     }
 
     // ── Stage 4: Compress ─────────────────────────────────────────────────────
+    // Operates on the assembled string; compresses section-by-section to stay within budget.
 
-    private List<ContextPacket> compress(List<ContextPacket> packets) {
-        if (!config.enableCompression()) return packets;
+    private String compress(String context) {
+        if (!config.enableCompression()) return context;
 
-        int perPacketLimit = Math.max(64, (int) (config.availableTokens() * 0.2));
-        return packets.stream()
-                .map(p -> truncate(p, perPacketLimit))
-                .collect(Collectors.toList());
+        int maxTokens = config.availableTokens();
+        if (estimateTokens(context) <= maxTokens) return context;
+
+        String[] sections = context.split("\n\n");
+        List<String> result = new ArrayList<>();
+        int total = 0;
+
+        for (String section : sections) {
+            int sectionTokens = estimateTokens(section);
+            if (total + sectionTokens <= maxTokens) {
+                result.add(section);
+                total += sectionTokens;
+            } else {
+                int remaining = maxTokens - total;
+                if (remaining > 50) {
+                    result.add(truncateText(section, remaining) + "\n[... 内容已压缩 ...]");
+                }
+                break;
+            }
+        }
+
+        return String.join("\n\n", result);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -231,26 +250,32 @@ public final class ContextBuilder {
         return Math.max(0.1, Math.min(1.0, score));
     }
 
-    private static int tokenEstimate(ContextPacket p) {
+    private static int estimateTokens(ContextPacket p) {
         return Math.max(1, p.tokenEstimate());
     }
 
     /**
-     * CJK characters count as 1 token each; other characters use a 4-chars-per-token ratio.
+     * CJK/kana characters count as 1 token each; non-CJK words count as 1.3 tokens each.
      */
-    private static int estimateTokens(String content) {
-        if (content == null || content.isEmpty()) return 0;
+    private static int estimateTokens(String text) {
+        if (text == null || text.isEmpty()) return 0;
         int cjk = 0;
-        for (int i = 0; i < content.length(); i++) {
-            Character.UnicodeBlock block = Character.UnicodeBlock.of(content.charAt(i));
+        StringBuilder nonCjk = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            Character.UnicodeBlock block = Character.UnicodeBlock.of(c);
             if (block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
                     || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
                     || block == Character.UnicodeBlock.HIRAGANA
                     || block == Character.UnicodeBlock.KATAKANA) {
                 cjk++;
+            } else {
+                nonCjk.append(c);
             }
         }
-        return Math.max(1, cjk + (content.length() - cjk) / 4);
+        long words = Arrays.stream(nonCjk.toString().split("\\s+"))
+                .filter(w -> !w.isEmpty()).count();
+        return Math.max(1, (int) (cjk + words * 1.3));
     }
 
     private static ContextPacket withType(ContextPacket p, String type) {
@@ -274,16 +299,11 @@ public final class ContextBuilder {
                 .build();
     }
 
-    private static ContextPacket truncate(ContextPacket p, int maxTokens) {
-        int maxChars = maxTokens * 4;
-        if (p.content().length() <= maxChars) return p;
-        String truncated = p.content().substring(0, maxChars) + "...";
-        return ContextPacket.of(truncated)
-                .withRelevance(p.relevanceScore())
-                .withTokenEstimate(maxTokens)
-                .withCreatedAt(p.createdAt())
-                .withMetadata(p.metadata())
-                .build();
+    private static String truncateText(String text, int maxTokens) {
+        int total = estimateTokens(text);
+        if (total == 0) return text;
+        int maxChars = (int) ((double) text.length() / total * maxTokens);
+        return text.substring(0, Math.min(maxChars, text.length()));
     }
 
     // ── Stage 3: Structure ────────────────────────────────────────────────────
