@@ -4,12 +4,15 @@ import com.helloagents.llm.Message;
 import com.helloagents.memory.MemoryService;
 import com.helloagents.memory.core.MemoryType;
 import com.helloagents.rag.app.RagSystem;
+import com.helloagents.rag.core.Embedding;
+import com.helloagents.rag.core.EmbeddingModel;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,13 +41,13 @@ public final class ContextBuilder {
     private final ContextConfig config;
 
     // ── Data sources (wired at construction, reused across builds) ────────────
-    private MemoryService memory;
-    private MemoryType[]  memoryTypes      = new MemoryType[0];
-    private int           memoryLimit      = Integer.MAX_VALUE;
-    private double        memoryMinImportance = 0.0;
-    private RagSystem     rag;
-    private int           ragTopK          = 5;
-    private double        ragMinScore      = 0.0;
+    private MemoryService  memory;
+    private MemoryType[]   memoryTypes         = new MemoryType[0];
+    private int            memoryLimit         = Integer.MAX_VALUE;
+    private double         memoryMinImportance = 0.0;
+    private RagSystem      rag;
+    private int            ragTopK             = 5;
+    private double         ragMinScore         = 0.0;
 
     public ContextBuilder(ContextConfig config) {
         this.config = config;
@@ -72,6 +75,7 @@ public final class ContextBuilder {
         this.ragMinScore = minScore;
         return this;
     }
+
 
     // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -175,14 +179,14 @@ public final class ContextBuilder {
         if (remainingTokens <= 0) return systemPackets;
 
         String q = userQuery != null ? userQuery : "";
+        Map<ContextPacket, Double> relevanceMap = computeRelevance(otherPackets, q);
+
         List<Map.Entry<Double, ContextPacket>> scored = new ArrayList<>();
         for (ContextPacket p : otherPackets) {
-            double relevance = p.relevanceScore() == 0.5
-                    ? calculateRelevance(p.content(), q)
-                    : p.relevanceScore();
-            double recency = calculateRecency(p.createdAt());
-            double score   = config.relevanceWeight() * relevance
-                           + config.recencyWeight()   * recency;
+            double relevance = relevanceMap.get(p);
+            double recency   = recencyScore(p.createdAt());
+            double score     = config.relevanceWeight() * relevance
+                             + config.recencyWeight()   * recency;
             if (relevance >= config.minRelevance()) {
                 scored.add(Map.entry(score, p));
             }
@@ -199,6 +203,45 @@ public final class ContextBuilder {
             }
         }
         return selected;
+    }
+
+    /**
+     * Computes relevance scores for packets whose stored relevance == 0.5 (sentinel = needs calculation).
+     * Uses vector cosine similarity when an EmbeddingModel is configured; falls back to Jaccard otherwise.
+     * Packets with explicit relevance (≠ 0.5) are returned unchanged.
+     */
+    private Map<ContextPacket, Double> computeRelevance(List<ContextPacket> packets, String query) {
+        Map<ContextPacket, Double> result = new IdentityHashMap<>();
+
+        List<ContextPacket> needsCalc = packets.stream()
+                .filter(p -> p.relevanceScore() == 0.5)
+                .collect(Collectors.toList());
+
+        if (!needsCalc.isEmpty() && !query.isBlank() && config.embeddingModel() != null) {
+            // Batch-embed query + all candidates in one API call
+            List<String> texts = new ArrayList<>();
+            texts.add(query);
+            needsCalc.forEach(p -> texts.add(p.content()));
+
+            List<Embedding> embeddings = config.embeddingModel().embedBatch(texts);
+            float[] queryVec = embeddings.get(0).vector();
+
+            Map<ContextPacket, Double> vecScores = new IdentityHashMap<>();
+            for (int i = 0; i < needsCalc.size(); i++) {
+                vecScores.put(needsCalc.get(i), (double) cosineSimilarity(queryVec, embeddings.get(i + 1).vector()));
+            }
+            for (ContextPacket p : packets) {
+                result.put(p, p.relevanceScore() == 0.5 ? vecScores.get(p) : p.relevanceScore());
+            }
+        } else {
+            // Fallback: Jaccard keyword similarity
+            for (ContextPacket p : packets) {
+                result.put(p, p.relevanceScore() == 0.5
+                        ? jaccardSimilarity(p.content(), query)
+                        : p.relevanceScore());
+            }
+        }
+        return result;
     }
 
     // ── Stage 4: Compress ─────────────────────────────────────────────────────
@@ -233,8 +276,19 @@ public final class ContextBuilder {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** Jaccard similarity between content words and query words. */
-    private static double calculateRelevance(String content, String query) {
+    private static float cosineSimilarity(float[] a, float[] b) {
+        double dot = 0, normA = 0, normB = 0;
+        for (int i = 0; i < a.length; i++) {
+            dot   += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+        if (normA == 0 || normB == 0) return 0f;
+        return (float) (dot / (Math.sqrt(normA) * Math.sqrt(normB)));
+    }
+
+    /** Jaccard similarity between content words and query words (fallback when no EmbeddingModel). */
+    private static double jaccardSimilarity(String content, String query) {
         if (query.isBlank()) return 0.0;
         Set<String> contentWords = new HashSet<>(Arrays.asList(content.toLowerCase().split("\\s+")));
         Set<String> queryWords   = new HashSet<>(Arrays.asList(query.toLowerCase().split("\\s+")));
@@ -246,7 +300,7 @@ public final class ContextBuilder {
     }
 
     /** Exponential decay recency: stays high within 24 h, decays gradually after. */
-    private static double calculateRecency(Instant timestamp) {
+    private static double recencyScore(Instant timestamp) {
         double ageHours = (Instant.now().toEpochMilli() - timestamp.toEpochMilli()) / 3_600_000.0;
         double score = Math.exp(-0.1 * ageHours / 24.0);
         return Math.max(0.1, Math.min(1.0, score));

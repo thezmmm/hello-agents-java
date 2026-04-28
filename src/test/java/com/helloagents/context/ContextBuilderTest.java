@@ -4,6 +4,9 @@ import com.helloagents.llm.Message;
 import com.helloagents.memory.MemoryManager;
 import com.helloagents.memory.MemoryService;
 import com.helloagents.memory.core.MemoryType;
+import com.helloagents.rag.core.Embedding;
+import com.helloagents.rag.core.EmbeddingModel;
+import com.helloagents.rag.core.ModelInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -202,6 +205,47 @@ class ContextBuilderTest {
                 List.of()
         );
         assertFalse(ctx.contains("[... 内容已压缩 ...]"));
+    }
+
+    // ── embedding-based relevance ─────────────────────────────────────────────
+
+    @Test
+    void embeddingBasedRelevanceIncludesHighSimilarityPackets() {
+        // Fake model: vectors controlled by content string
+        EmbeddingModel fakeModel = new EmbeddingModel() {
+            @Override public ModelInfo modelInfo() { return new ModelInfo("fake", 3, 8191); }
+            @Override public Embedding embed(String text) { return embedBatch(List.of(text)).get(0); }
+            @Override
+            public List<Embedding> embedBatch(List<String> texts) {
+                return texts.stream().map(t -> new Embedding(vectorFor(t), "fake", 0)).toList();
+            }
+            private float[] vectorFor(String text) {
+                if (text.contains("Java"))      return new float[]{1f, 0f, 0f};
+                if (text.contains("unrelated")) return new float[]{0f, 0f, 1f};
+                return new float[]{0f, 1f, 0f};
+            }
+        };
+
+        ContextConfig cfg = ContextConfig.builder()
+                .embeddingModel(fakeModel)
+                .minRelevance(0.1)
+                .build();
+
+        // relevance=0.5 → triggers vector recalculation in select
+        ContextPacket relevant = ContextPacket.of("Java is a programming language.")
+                .withMetadata(Map.of("type", "rag_result"))
+                .build();
+        ContextPacket irrelevant = ContextPacket.of("completely unrelated topic")
+                .withMetadata(Map.of("type", "rag_result"))
+                .build();
+
+        String ctx = new ContextBuilder(cfg)
+                .build("Java question", null, List.of(), List.of(relevant, irrelevant));
+
+        // cosine("Java question", "Java is...") ≈ 1.0 → included
+        assertTrue(ctx.contains("Java is a programming language."));
+        // cosine("Java question", "completely unrelated") = 0.0 < minRelevance → filtered
+        assertFalse(ctx.contains("completely unrelated topic"));
     }
 
     // ── output preview ───────────────────────────────────────────────────────
