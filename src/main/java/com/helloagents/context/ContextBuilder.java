@@ -2,7 +2,6 @@ package com.helloagents.context;
 
 import com.helloagents.llm.Message;
 import com.helloagents.memory.MemoryService;
-import com.helloagents.memory.core.MemoryType;
 import com.helloagents.rag.app.RagSystem;
 import com.helloagents.rag.core.Embedding;
 import com.helloagents.rag.core.EmbeddingModel;
@@ -42,26 +41,16 @@ public final class ContextBuilder {
 
     // ── Data sources (wired at construction, reused across builds) ────────────
     private MemoryService  memory;
-    private MemoryType[]   memoryTypes         = new MemoryType[0];
-    private int            memoryLimit         = Integer.MAX_VALUE;
-    private double         memoryMinImportance = 0.0;
     private RagSystem      rag;
-    private int            ragTopK             = 5;
-    private double         ragMinScore         = 0.0;
+    private int            ragTopK    = 5;
+    private double         ragMinScore = 0.0;
 
     public ContextBuilder(ContextConfig config) {
         this.config = config;
     }
 
-    public ContextBuilder withMemory(MemoryService memory, MemoryType... types) {
-        this.memory      = memory;
-        this.memoryTypes = types;
-        return this;
-    }
-
-    public ContextBuilder withMemoryFilter(int limit, double minImportance) {
-        this.memoryLimit         = limit;
-        this.memoryMinImportance = minImportance;
+    public ContextBuilder withMemory(MemoryService memory) {
+        this.memory = memory;
         return this;
     }
 
@@ -128,16 +117,6 @@ public final class ContextBuilder {
                         .withMetadata(Map.of("type", "conversation"))
                         .build());
             }
-        }
-
-        // memory: no explicit relevance → defaults to 0.5, select recalculates via user query
-        if (memory != null && userQuery != null && !userQuery.isBlank()) {
-            memory.search(userQuery, memoryLimit, memoryMinImportance, memoryTypes).forEach(entry ->
-                    all.add(ContextPacket.of(entry.content())
-                            .withCreatedAt(Instant.ofEpochMilli(entry.createdAt()))
-                            .withTokenEstimate(estimateTokens(entry.content()))
-                            .withMetadata(Map.of("type", "memory"))
-                            .build()));
         }
 
         // RAG: no explicit relevance → defaults to 0.5, select recalculates via user query
@@ -365,7 +344,7 @@ public final class ContextBuilder {
     // ── Stage 3: Structure ────────────────────────────────────────────────────
     // Groups packets by type and assembles a sectioned prompt template.
 
-    private static String structure(List<ContextPacket> packets, String userQuery) {
+    private String structure(List<ContextPacket> packets, String userQuery) {
         List<String> systemInstructions = new ArrayList<>();
         List<String> evidence           = new ArrayList<>();
         List<String> context            = new ArrayList<>();
@@ -374,7 +353,7 @@ public final class ContextBuilder {
             String type = p.metadata().getOrDefault("type", "general");
             if ("system_instruction".equals(type)) {
                 systemInstructions.add(p.content());
-            } else if ("rag_result".equals(type) || "knowledge".equals(type) || "memory".equals(type)) {
+            } else if ("rag_result".equals(type) || "knowledge".equals(type)) {
                 evidence.add(p.content());
             } else {
                 context.add(p.content());
@@ -385,6 +364,11 @@ public final class ContextBuilder {
 
         if (!systemInstructions.isEmpty()) {
             sections.add("[Role & Policies]\n" + String.join("\n", systemInstructions));
+        }
+
+        if (memory != null) {
+            sections.add("[Memory]\n" + memory.buildIndex()
+                    + "\n\n如需查看具体记忆内容，请使用 search_memory 工具检索。");
         }
 
         if (userQuery != null && !userQuery.isBlank()) {

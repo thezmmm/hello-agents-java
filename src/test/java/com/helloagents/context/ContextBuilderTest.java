@@ -88,17 +88,17 @@ class ContextBuilderTest {
     }
 
     @Test
-    void memoryResultAppearsInEvidence() {
+    void memoryIndexAppearsInMemorySection() {
         MemoryService memory = new MemoryService(new MemoryManager());
-        // query must be a substring of content for MemoryService keyword search
-        memory.remember(MemoryType.SEMANTIC, "James Gosling created Java.", 0.9);
+        memory.remember(MemoryType.PROJECT, "James Gosling created Java.", "gosling", "Creator of Java", null);
 
         String ctx = new ContextBuilder(config)
                 .withMemory(memory)
-                .build("James Gosling");
+                .build("Java 的起源");
 
-        assertTrue(ctx.contains("[Evidence]"));
-        assertTrue(ctx.contains("James Gosling"));
+        assertTrue(ctx.contains("[Memory]"));
+        assertTrue(ctx.contains("gosling"));
+        assertTrue(ctx.contains("search_memory"));
     }
 
     // ── section ordering ──────────────────────────────────────────────────────
@@ -253,8 +253,8 @@ class ContextBuilderTest {
     @Test
     void printFullOutput() {
         MemoryService memory = new MemoryService(new MemoryManager());
-        memory.remember(MemoryType.SEMANTIC, "James Gosling created Java in 1995 at Sun Microsystems.", 0.9);
-        memory.remember(MemoryType.EPISODIC, "User previously asked about JVM internals.", 0.7);
+        memory.remember(MemoryType.PROJECT,  "James Gosling created Java in 1995 at Sun Microsystems.", "gosling", "Creator of Java", null);
+        memory.remember(MemoryType.FEEDBACK, "User previously asked about JVM internals.", "jvm_history", "Prior JVM question", null);
 
         ContextPacket ragResult = ContextPacket.of(
                 "Java is a high-level, class-based, object-oriented programming language.")
