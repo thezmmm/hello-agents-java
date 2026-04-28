@@ -6,8 +6,12 @@ import com.helloagents.rag.app.RagSystem;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -76,9 +80,8 @@ public final class ContextBuilder {
             List<String> conversationHistory,
             List<ContextPacket> customPackets) {
         List<ContextPacket> gathered   = gather(userQuery, systemInstructions, conversationHistory, customPackets);
-        List<ContextPacket> selected   = select(gathered);
-        List<ContextPacket> structured = structure(selected);
-        List<ContextPacket> compressed = compress(structured);
+        List<ContextPacket> selected   = select(gathered, userQuery);
+        List<ContextPacket> compressed = compress(selected);
         return assemble(compressed);
     }
 
@@ -102,39 +105,39 @@ public final class ContextBuilder {
                     .withRelevance(1.0)
                     .withCreatedAt(Instant.EPOCH)
                     .withTokenEstimate(estimateTokens(systemInstructions))
+                    .withMetadata(Map.of("type", "system_instruction"))
                     .build());
         }
 
-        // conversationHistory: ascending timestamps, relevance grows with recency (0.5 → 0.8)
+        // conversationHistory: ascending timestamps, fixed relevance 0.6
         if (conversationHistory != null && !conversationHistory.isEmpty()) {
             int n = conversationHistory.size();
             long base = Instant.now().toEpochMilli() - n * 1_000L;
             for (int i = 0; i < n; i++) {
                 String turn = conversationHistory.get(i);
-                double rel = 0.5 + 0.3 * ((double) i / Math.max(1, n - 1));
                 all.add(ContextPacket.of(turn)
-                        .withRelevance(rel)
+                        .withRelevance(0.6)
                         .withCreatedAt(Instant.ofEpochMilli(base + (long) i * 1_000))
                         .withTokenEstimate(estimateTokens(turn))
                         .build());
             }
         }
 
-        // memory: search with userQuery, apply limit and minImportance
+        // memory: relevance defaults to 0.5 so select recalculates via user query
         if (memory != null && userQuery != null && !userQuery.isBlank()) {
             memory.search(userQuery, memoryLimit, memoryMinImportance, memoryTypes).forEach(entry ->
                     all.add(ContextPacket.of(entry.content())
-                            .withRelevance(entry.importance())
+                            .withRelevance(0.5)
                             .withCreatedAt(Instant.ofEpochMilli(entry.createdAt()))
                             .withTokenEstimate(estimateTokens(entry.content()))
                             .build()));
         }
 
-        // RAG: retrieve top-k chunks with userQuery, filter by minScore
+        // RAG: relevance defaults to 0.5 so select recalculates via user query
         if (rag != null && userQuery != null && !userQuery.isBlank()) {
             rag.search(userQuery, ragTopK, ragMinScore).forEach(result ->
                     all.add(ContextPacket.of(result.content())
-                            .withRelevance(result.score())
+                            .withRelevance(0.5)
                             .withTokenEstimate(estimateTokens(result.content()))
                             .build()));
         }
@@ -150,43 +153,46 @@ public final class ContextBuilder {
     }
 
     // ── Stage 2: Select ───────────────────────────────────────────────────────
+    // Separates system packets (always included), scores and greedy-fills the rest.
 
-    private List<ContextPacket> select(List<ContextPacket> packets) {
-        if (packets.isEmpty()) return packets;
-
-        long minEpoch = packets.stream()
-                .mapToLong(p -> p.createdAt().toEpochMilli()).min().orElse(0L);
-        long maxEpoch = packets.stream()
-                .mapToLong(p -> p.createdAt().toEpochMilli()).max().orElse(minEpoch);
-        long range = maxEpoch - minEpoch;
-
-        return packets.stream()
-                .filter(p -> p.relevanceScore() >= config.minRelevance())
-                .sorted(Comparator.comparingDouble(
-                        (ContextPacket p) -> compositeScore(p, minEpoch, range)).reversed())
+    private List<ContextPacket> select(List<ContextPacket> packets, String userQuery) {
+        List<ContextPacket> systemPackets = packets.stream()
+                .filter(p -> "system_instruction".equals(p.metadata().get("type")))
                 .collect(Collectors.toList());
-    }
+        List<ContextPacket> otherPackets = packets.stream()
+                .filter(p -> !"system_instruction".equals(p.metadata().get("type")))
+                .collect(Collectors.toList());
 
-    private double compositeScore(ContextPacket p, long minEpoch, long range) {
-        double recency = range == 0 ? 1.0
-                : (double) (p.createdAt().toEpochMilli() - minEpoch) / range;
-        return config.recencyWeight()   * recency
-             + config.relevanceWeight() * p.relevanceScore();
-    }
+        int systemTokens    = systemPackets.stream().mapToInt(ContextBuilder::tokenEstimate).sum();
+        int remainingTokens = config.availableTokens() - systemTokens;
 
-    // ── Stage 3: Structure ────────────────────────────────────────────────────
+        if (remainingTokens <= 0) return systemPackets;
 
-    private List<ContextPacket> structure(List<ContextPacket> packets) {
-        int budget = config.availableTokens();
-        List<ContextPacket> result = new ArrayList<>();
-        int used = 0;
-        for (ContextPacket p : packets) {
-            int tokens = tokenEstimate(p);
-            if (used + tokens > budget) break;
-            result.add(p);
-            used += tokens;
+        String q = userQuery != null ? userQuery : "";
+        List<Map.Entry<Double, ContextPacket>> scored = new ArrayList<>();
+        for (ContextPacket p : otherPackets) {
+            double relevance = p.relevanceScore() == 0.5
+                    ? calculateRelevance(p.content(), q)
+                    : p.relevanceScore();
+            double recency = calculateRecency(p.createdAt());
+            double score   = config.relevanceWeight() * relevance
+                           + config.recencyWeight()   * recency;
+            if (relevance >= config.minRelevance()) {
+                scored.add(Map.entry(score, p));
+            }
         }
-        return result;
+        scored.sort(Map.Entry.<Double, ContextPacket>comparingByKey().reversed());
+
+        List<ContextPacket> selected = new ArrayList<>(systemPackets);
+        int used = systemTokens;
+        for (Map.Entry<Double, ContextPacket> e : scored) {
+            int tokens = ContextBuilder.tokenEstimate(e.getValue());
+            if (used + tokens <= config.availableTokens()) {
+                selected.add(e.getValue());
+                used += tokens;
+            }
+        }
+        return selected;
     }
 
     // ── Stage 4: Compress ─────────────────────────────────────────────────────
@@ -201,6 +207,25 @@ public final class ContextBuilder {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /** Jaccard similarity between content words and query words. */
+    private static double calculateRelevance(String content, String query) {
+        if (query.isBlank()) return 0.0;
+        Set<String> contentWords = new HashSet<>(Arrays.asList(content.toLowerCase().split("\\s+")));
+        Set<String> queryWords   = new HashSet<>(Arrays.asList(query.toLowerCase().split("\\s+")));
+        Set<String> intersection = new HashSet<>(contentWords);
+        intersection.retainAll(queryWords);
+        Set<String> union = new HashSet<>(contentWords);
+        union.addAll(queryWords);
+        return union.isEmpty() ? 0.0 : (double) intersection.size() / union.size();
+    }
+
+    /** Exponential decay recency: stays high within 24 h, decays gradually after. */
+    private static double calculateRecency(Instant timestamp) {
+        double ageHours = (Instant.now().toEpochMilli() - timestamp.toEpochMilli()) / 3_600_000.0;
+        double score = Math.exp(-0.1 * ageHours / 24.0);
+        return Math.max(0.1, Math.min(1.0, score));
+    }
 
     private static int tokenEstimate(ContextPacket p) {
         return Math.max(1, p.tokenEstimate());
