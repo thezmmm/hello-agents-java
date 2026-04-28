@@ -8,7 +8,13 @@ import com.helloagents.tools.ToolParameter.Param;
 
 import java.util.Map;
 
-/** Add a new memory entry. Input: {@code type=semantic|content=...|importance=0.9} */
+/**
+ * save_memory — persist a cross-session memory entry.
+ *
+ * <p>Call ONLY when the user explicitly states something that is valuable beyond the current
+ * session AND cannot be re-derived from the current codebase or git history.
+ * Do NOT call for current task progress, code structure, or temporary context.
+ */
 public class MemoryAddTool implements Tool {
 
     private final MemoryService service;
@@ -17,41 +23,45 @@ public class MemoryAddTool implements Tool {
         this.service = service;
     }
 
-    @Override public String name() { return "memory_add"; }
+    @Override public String name() { return "save_memory"; }
 
     @Override
     public String description() {
-        return "Store a new memory entry and return its ID. Use the ID later to update or remove it.";
+        return """
+                Save a memory entry that should persist across sessions. \
+                Call ONLY when the information is long-term valuable and cannot be derived \
+                from the current code or history (e.g. user preferences, explicit corrections, \
+                non-obvious project constraints, external resource pointers). \
+                Do NOT call for current task progress, file structures, or anything re-derivable.""";
     }
 
     @Override
     public ToolParameter parameters() {
         return ToolParameter.of(
-            Param.required("type",       "Memory type: perceptual | working | episodic | semantic", "string"),
-            Param.required("content",    "The content to remember", "string"),
-            Param.optional("importance", "Relevance weight 0.0-1.0, default 0.5", "number"),
-            Param.optional("file_path",  "File path for perceptual memories (image, audio, video, document)", "string"),
-            Param.optional("modality",   "Modality hint: image | audio | video | document | text (inferred from file_path if omitted)", "string")
+            Param.required("name",        "Short slug for the index, e.g. prefer_tabs", "string"),
+            Param.required("description", "One-liner summary shown in the index, e.g. User prefers tabs", "string"),
+            Param.required("type",        "Memory type: user | feedback | project | reference", "string"),
+            Param.required("content",     "Full memory content", "string")
         );
     }
 
     @Override
     public String execute(Map<String, String> p) {
+        String name    = p.get("name");
+        String desc    = p.get("description");
         String content = p.get("content");
+        if (name    == null || name.isBlank())    return "Error: 'name' is required.";
+        if (desc    == null || desc.isBlank())    return "Error: 'description' is required.";
         if (content == null || content.isBlank()) return "Error: 'content' is required.";
 
         MemoryType type;
         try {
-            type = MemoryType.fromString(p.getOrDefault("type", "working"));
+            type = MemoryType.fromString(p.getOrDefault("type", "feedback"));
         } catch (IllegalArgumentException e) {
             return "Error: " + e.getMessage();
         }
 
-        double importance = MemoryService.parseDouble(p.get("importance"), 0.5);
-        String filePath   = p.get("file_path");
-        String modality   = p.get("modality");
-
-        String id = service.remember(type, content, importance, filePath, modality, null);
-        return "Memory added. id=%s type=%s importance=%.2f".formatted(id, type.displayName, importance);
+        String id = service.remember(type, content, name, desc, null);
+        return "Memory saved. id=%s name=%s type=%s".formatted(id, name, type.displayName);
     }
 }

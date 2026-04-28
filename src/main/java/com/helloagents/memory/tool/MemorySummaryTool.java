@@ -9,7 +9,12 @@ import com.helloagents.tools.ToolParameter;
 import java.util.List;
 import java.util.Map;
 
-/** List all memories grouped by type. Input: (none) */
+/**
+ * list_memories — show all saved memories grouped by type.
+ *
+ * <p>Call when you need a full overview of what has been remembered — for example,
+ * at session start to reload context, or when the user asks what you remember about them.
+ */
 public class MemorySummaryTool implements Tool {
 
     private final MemoryService service;
@@ -18,11 +23,14 @@ public class MemorySummaryTool implements Tool {
         this.service = service;
     }
 
-    @Override public String name() { return "memory_summary"; }
+    @Override public String name() { return "list_memories"; }
 
     @Override
     public String description() {
-        return "List all stored memories grouped by type, sorted by importance within each group.";
+        return """
+                List all stored memories grouped by type (user / feedback / project / reference), \
+                Call at session start to reload context, or when the user \
+                asks what you remember.""";
     }
 
     @Override public ToolParameter parameters() { return ToolParameter.empty(); }

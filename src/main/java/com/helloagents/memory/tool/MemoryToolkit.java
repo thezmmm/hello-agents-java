@@ -4,13 +4,13 @@ import com.helloagents.memory.MemoryManager;
 import com.helloagents.memory.MemoryService;
 import com.helloagents.tools.Tool;
 import com.helloagents.tools.Toolkit;
-import com.helloagents.tools.ToolRegistry;
 
 import java.util.List;
 
 /**
- * Factory that wires {@link MemoryManager} and {@link MemoryService} together
- * and exposes all nine memory tools sharing the same underlying stores.
+ * Wires a {@link MemoryService} and exposes the five core memory tools.
+ * All tools depend solely on {@link MemoryService}; {@link MemoryManager} is an
+ * internal implementation detail not exposed to the tool layer.
  *
  * <p>Typical usage:
  * <pre>
@@ -20,34 +20,27 @@ import java.util.List;
  */
 public class MemoryToolkit implements Toolkit {
 
-    private final MemoryManager manager;
-    private final MemoryService  service;
-    private final List<Tool>     tools;
+    private final MemoryService service;
+    private final List<Tool>    tools;
 
     public MemoryToolkit() {
-        this(new MemoryManager());
+        this(new MemoryService(new MemoryManager()));
     }
 
-    public MemoryToolkit(MemoryManager manager) {
-        this.manager = manager;
-        this.service = new MemoryService(manager);
+    public MemoryToolkit(MemoryService service) {
+        this.service = service;
         this.tools = List.of(
             new MemoryAddTool(service),
-            new MemoryUpdateTool(manager),
-            new MemoryRemoveTool(manager),
-            new MemoryClearTool(manager),
             new MemorySearchTool(service),
             new MemorySummaryTool(service),
-            new MemoryStatsTool(service),
-            new MemoryForgetTool(service),
-            new MemoryConsolidateTool(service)
+            new MemoryUpdateTool(service),
+            new MemoryRemoveTool(service)
         );
     }
 
     @Override public String name()        { return "memory"; }
-    @Override public String description() { return "Tools for storing, searching, updating, and managing agent memory"; }
+    @Override public String description() { return "Five tools for saving, searching, listing, updating, and deleting agent memories"; }
 
-    public MemoryManager getManager() { return manager; }
-    public MemoryService  getService() { return service; }
+    public MemoryService getService() { return service; }
     @Override public List<Tool> getTools() { return tools; }
 }

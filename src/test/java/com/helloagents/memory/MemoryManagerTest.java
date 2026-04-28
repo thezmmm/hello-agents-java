@@ -19,9 +19,9 @@ class MemoryManagerTest {
     }
 
     @Test
-    void addAndGetAcrossAllTypes() {
+    void addAndGetAcrossAllPersistentTypes() {
         for (MemoryType type : MemoryType.values()) {
-            String id = manager.add(type, "content for " + type, 0.5);
+            String id = manager.add(type, "content for " + type);
             assertTrue(manager.get(id).isPresent(), "get() should find entry for type " + type);
             assertEquals(type, manager.get(id).get().type());
         }
@@ -33,22 +33,20 @@ class MemoryManagerTest {
     }
 
     @Test
-    void updateChangesContentAndImportance() {
-        String id = manager.add(MemoryType.WORKING, "old", 0.3);
-        assertTrue(manager.update(id, "new", 0.9));
-        MemoryEntry updated = manager.get(id).get();
-        assertEquals("new", updated.content());
-        assertEquals(0.9, updated.importance(), 0.001);
+    void updateChangesContent() {
+        String id = manager.add(MemoryType.FEEDBACK, "old");
+        assertTrue(manager.update(id, "new"));
+        assertEquals("new", manager.get(id).get().content());
     }
 
     @Test
     void updateMissingIdReturnsFalse() {
-        assertFalse(manager.update("bad-id", "x", 0.5));
+        assertFalse(manager.update("bad-id", "x"));
     }
 
     @Test
     void removeDeletesEntry() {
-        String id = manager.add(MemoryType.EPISODIC, "event", 0.6);
+        String id = manager.add(MemoryType.PROJECT, "convention");
         assertTrue(manager.remove(id));
         assertTrue(manager.get(id).isEmpty());
     }
@@ -60,39 +58,40 @@ class MemoryManagerTest {
 
     @Test
     void listByTypeIsolated() {
-        manager.add(MemoryType.WORKING, "W", 0.5);
-        manager.add(MemoryType.SEMANTIC, "S", 0.5);
-        List<MemoryEntry> working = manager.listByType(MemoryType.WORKING);
-        assertEquals(1, working.size());
-        assertEquals(MemoryType.WORKING, working.get(0).type());
+        manager.add(MemoryType.USER,     "U");
+        manager.add(MemoryType.FEEDBACK, "F");
+        List<MemoryEntry> users = manager.listByType(MemoryType.USER);
+        assertEquals(1, users.size());
+        assertEquals(MemoryType.USER, users.get(0).type());
     }
 
     @Test
-    void listAllAggregatesAllTypes() {
-        manager.add(MemoryType.WORKING, "W", 0.5);
-        manager.add(MemoryType.EPISODIC, "E", 0.5);
-        manager.add(MemoryType.SEMANTIC, "S", 0.5);
-        assertEquals(3, manager.listAll().size());
+    void listAllAggregatesAllPersistentTypes() {
+        manager.add(MemoryType.USER,      "U");
+        manager.add(MemoryType.FEEDBACK,  "F");
+        manager.add(MemoryType.PROJECT,   "P");
+        manager.add(MemoryType.REFERENCE, "R");
+        assertEquals(4, manager.listAll().size());
     }
 
     @Test
     void clearAllRemovesEverything() {
-        manager.add(MemoryType.WORKING, "W", 0.5);
-        manager.add(MemoryType.EPISODIC, "E", 0.5);
+        manager.add(MemoryType.USER,     "U");
+        manager.add(MemoryType.FEEDBACK, "F");
         manager.clearAll();
         assertEquals(0, manager.listAll().size());
     }
 
     @Test
     void saveRoutesToCorrectTypeStore() {
-        String id = manager.add(MemoryType.WORKING, "W", 0.5);
+        String id = manager.add(MemoryType.FEEDBACK, "original");
         MemoryEntry entry = manager.get(id).get();
-        MemoryEntry promoted = entry.withType(MemoryType.SEMANTIC, System.currentTimeMillis());
+        MemoryEntry moved = entry.withType(MemoryType.PROJECT, System.currentTimeMillis());
         manager.remove(id);
-        manager.save(promoted);
-        assertTrue(manager.get(promoted.id()).isPresent());
-        assertEquals(MemoryType.SEMANTIC, manager.get(promoted.id()).get().type());
-        assertEquals(0, manager.listByType(MemoryType.WORKING).size());
-        assertEquals(1, manager.listByType(MemoryType.SEMANTIC).size());
+        manager.save(moved);
+        assertTrue(manager.get(moved.id()).isPresent());
+        assertEquals(MemoryType.PROJECT, manager.get(moved.id()).get().type());
+        assertEquals(0, manager.listByType(MemoryType.FEEDBACK).size());
+        assertEquals(1, manager.listByType(MemoryType.PROJECT).size());
     }
 }

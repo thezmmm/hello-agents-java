@@ -3,120 +3,84 @@ package com.helloagents.memory;
 import com.helloagents.memory.core.MemoryEntry;
 import com.helloagents.memory.core.MemoryStore;
 import com.helloagents.memory.core.MemoryType;
-import com.helloagents.memory.store.EpisodicMemory;
-import com.helloagents.memory.store.PerceptualMemory;
-import com.helloagents.memory.store.SemanticMemory;
-import com.helloagents.memory.store.WorkingMemory;
+import com.helloagents.memory.store.InMemoryStore;
 
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
- * Memory management layer — coordinates all cognitive memory types.
+ * Memory management layer — all four persistent types share one {@link MemoryStore}.
  *
- * <p>Holds one {@link MemoryStore} per {@link MemoryType} and routes each
- * operation to the appropriate type store. Aggregates cross-type results
- * for callers that need a unified view.
- *
- * <p>Business logic (search ranking, forget strategies, consolidation) belongs
- * in {@link MemoryService}.
+ * <p>Type isolation is maintained by filtering on {@link MemoryEntry#type()};
+ * the default implementation is {@link InMemoryStore}.
  */
 public class MemoryManager {
 
-    private final Map<MemoryType, MemoryStore> stores = new EnumMap<>(MemoryType.class);
+    private final MemoryStore store;
 
-    /** Default setup: standard implementations for all four types. */
     public MemoryManager() {
-        stores.put(MemoryType.PERCEPTUAL, new PerceptualMemory());
-        stores.put(MemoryType.WORKING,    new WorkingMemory());
-        stores.put(MemoryType.EPISODIC,   new EpisodicMemory());
-        stores.put(MemoryType.SEMANTIC,   new SemanticMemory());
+        this(new InMemoryStore());
     }
 
-    /** Custom setup: supply your own store per type (partial maps are not supported). */
-    public MemoryManager(Map<MemoryType, MemoryStore> stores) {
-        this.stores.putAll(stores);
-    }
-
-    /** Direct access to the store for a specific type (for consolidation, testing, etc.). */
-    public MemoryStore storeFor(MemoryType type) {
-        return stores.get(type);
+    public MemoryManager(MemoryStore store) {
+        this.store = store;
     }
 
     // ── CRUD ─────────────────────────────────────────────────────────────────
 
-    /**
-     * Add a new entry to the store for the given type.
-     * ID generation and type-specific constraints are handled by each store.
-     */
-    public String add(MemoryType type, String content, double importance) {
-        return add(type, content, importance, Map.of());
+    public String add(MemoryType type, String content) {
+        return add(type, content, null, Map.of());
     }
 
-    public String add(MemoryType type, String content, double importance, Map<String, String> metadata) {
-        MemoryStore store = stores.get(type);
-        if (store instanceof WorkingMemory   wm) return wm.add(content, importance, metadata);
-        if (store instanceof EpisodicMemory  em) return em.add(content, importance, metadata);
-        if (store instanceof SemanticMemory  sm) return sm.add(content, importance, metadata);
-        if (store instanceof PerceptualMemory pm) return pm.add(content, importance, metadata);
-        throw new IllegalStateException("No add() handler for type: " + type);
+    public String add(MemoryType type, String content, Map<String, String> metadata) {
+        return add(type, content, null, metadata);
     }
 
-    /** Retrieve an entry by ID, searching across all type stores. */
+    public String add(MemoryType type, String content, String description, Map<String, String> metadata) {
+        String id  = newId();
+        long   now = System.currentTimeMillis();
+        store.save(new MemoryEntry(id, type, content, description, now, now, 0, metadata));
+        return id;
+    }
+
     public Optional<MemoryEntry> get(String id) {
-        for (MemoryStore store : stores.values()) {
-            Optional<MemoryEntry> found = store.get(id);
-            if (found.isPresent()) return found;
-        }
-        return Optional.empty();
+        return store.get(id);
     }
 
-    /**
-     * Replace the content and importance of an existing entry.
-     *
-     * @return {@code true} if the entry was found and updated
-     */
-    public boolean update(String id, String newContent, double newImportance) {
-        for (MemoryStore store : stores.values()) {
-            Optional<MemoryEntry> found = store.get(id);
-            if (found.isPresent()) {
-                store.save(found.get().withContent(newContent,
-                        WorkingMemory.clamp(newImportance), System.currentTimeMillis()));
-                return true;
-            }
-        }
-        return false;
+    public boolean update(String id, String newContent) {
+        Optional<MemoryEntry> found = store.get(id);
+        if (found.isEmpty()) return false;
+        store.save(found.get().withContent(newContent, System.currentTimeMillis()));
+        return true;
     }
 
-    /** Delete an entry by ID from whichever type store holds it. */
     public boolean remove(String id) {
-        for (MemoryStore store : stores.values()) {
-            if (store.delete(id)) return true;
-        }
-        return false;
+        return store.delete(id);
     }
 
-    /** Save an existing entry to the store matching its type (used for consolidation). */
     public void save(MemoryEntry entry) {
-        stores.get(entry.type()).save(entry);
+        store.save(entry);
     }
 
     // ── queries ───────────────────────────────────────────────────────────────
 
-    /** All entries for a specific memory type. */
     public List<MemoryEntry> listByType(MemoryType type) {
-        return stores.get(type).listAll();
+        return store.listAll().stream().filter(e -> e.type() == type).toList();
     }
 
-    /** All entries across every type store. */
     public List<MemoryEntry> listAll() {
-        return stores.values().stream().flatMap(s -> s.listAll().stream()).toList();
+        return store.listAll();
     }
 
-    /** Clear all entries from every type store. */
     public void clearAll() {
-        stores.values().forEach(MemoryStore::clear);
+        store.clear();
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    private static String newId() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }
 }

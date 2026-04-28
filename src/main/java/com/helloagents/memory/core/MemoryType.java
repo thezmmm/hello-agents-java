@@ -1,21 +1,24 @@
 package com.helloagents.memory.core;
 
 /**
- * Cognitive memory types, each with different persistence and capacity characteristics.
+ * Persistent agent memory types. Each type survives across sessions.
+ *
+ * <p>All four types share one underlying store; session-scoped working memory is
+ * out of scope for this system.
  */
 public enum MemoryType {
 
-    /** Immediate sensory input; ultra-short-lived, replaced by new perceptions instantly. */
-    PERCEPTUAL("感知记忆", "即时输入，极短期"),
+    /** User preferences: code style, response verbosity, tool-chain choices. */
+    USER("用户偏好", "代码风格、响应详略、工具链偏好等长期用户习惯"),
 
-    /** Active task context; limited capacity, cleared when task changes. */
-    WORKING("工作记忆", "当前任务临时上下文，容量有限"),
+    /** Explicit corrections and validated effective approaches. */
+    FEEDBACK("用户纠正", "明确纠正过的错误，或已验证有效的做法"),
 
-    /** Personal experiences and events; time-stamped episodes. */
-    EPISODIC("情节记忆", "过去的经历和事件"),
+    /** Non-obvious project conventions and design rationale that cannot be derived from code. */
+    PROJECT("项目约定", "无法从代码直接推导的设计决策、合规原因、团队规则"),
 
-    /** Facts, rules, and general knowledge; long-term and stable. */
-    SEMANTIC("语义记忆", "知识、事实、规则，长期稳定");
+    /** Pointers to external resources: issue boards, dashboards, doc URLs. */
+    REFERENCE("外部资源", "问题单看板、监控面板地址、文档 URL 等外部指针");
 
     public final String displayName;
     public final String description;
@@ -30,6 +33,6 @@ public enum MemoryType {
             if (t.name().equalsIgnoreCase(value)) return t;
         }
         throw new IllegalArgumentException("Unknown memory type: " + value
-                + ". Valid types: perceptual, working, episodic, semantic");
+                + ". Valid types: user, feedback, project, reference");
     }
 }

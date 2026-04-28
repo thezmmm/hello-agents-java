@@ -6,11 +6,9 @@ import java.util.Optional;
 /**
  * Storage contract for memory entries of a single cognitive type.
  *
- * <p>Each {@link MemoryType} maps to one {@code MemoryStore} implementation
- * ({@code WorkingMemory}, {@code EpisodicMemory}, etc.) that handles its own
- * storage and type-specific constraints.
- * {@link com.helloagents.memory.MemoryManager} holds one instance per type and routes operations
- * to the appropriate store.
+ * <p>All four persistent {@link MemoryType} values share a single {@code InMemoryStore}.
+ * {@link com.helloagents.memory.MemoryManager} creates entries with the appropriate type tag
+ * and filters on retrieval.
  */
 public interface MemoryStore {
 

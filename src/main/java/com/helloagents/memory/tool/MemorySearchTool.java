@@ -11,7 +11,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/** Search memories by keyword. Input: {@code query=Java} or {@code query=Java|type=semantic} */
+/**
+ * search_memory — look up relevant memories before acting.
+ *
+ * <p>Call at the start of a new session, when the user references past preferences or decisions,
+ * or before making a recommendation that prior context might affect.
+ * Results provide directional guidance — always verify against current code state.
+ */
 public class MemorySearchTool implements Tool {
 
     private final MemoryService service;
@@ -20,18 +26,21 @@ public class MemorySearchTool implements Tool {
         this.service = service;
     }
 
-    @Override public String name() { return "memory_search"; }
+    @Override public String name() { return "search_memory"; }
 
     @Override
     public String description() {
-        return "Search stored memories by keyword, optionally filtered by type. Results are sorted by importance.";
+        return """
+                Search stored memories by keyword. Call at the start of a new session or when \
+                the user references past preferences, corrections, or decisions. \
+                Memories are directional hints — verify against current code before acting on them.""";
     }
 
     @Override
     public ToolParameter parameters() {
         return ToolParameter.of(
             Param.required("query", "Case-insensitive keyword to search for", "string"),
-            Param.optional("type",  "Restrict to one type: perceptual | working | episodic | semantic", "string")
+            Param.optional("type",  "Restrict to one type: user | feedback | project | reference", "string")
         );
     }
 

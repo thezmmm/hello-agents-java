@@ -12,219 +12,169 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class MemoryToolsTest {
 
-    private MemoryManager manager;
-    private MemoryService  service;
-
-    private MemoryAddTool         addTool;
-    private MemoryUpdateTool      updateTool;
-    private MemoryRemoveTool      removeTool;
-    private MemoryClearTool       clearTool;
-    private MemorySearchTool      searchTool;
-    private MemorySummaryTool     summaryTool;
-    private MemoryStatsTool       statsTool;
-    private MemoryForgetTool      forgetTool;
-    private MemoryConsolidateTool consolidateTool;
+    private MemoryService     service;
+    private MemoryAddTool     addTool;
+    private MemorySearchTool  searchTool;
+    private MemorySummaryTool summaryTool;
+    private MemoryUpdateTool  updateTool;
+    private MemoryRemoveTool  removeTool;
 
     @BeforeEach
     void setUp() {
-        manager         = new MemoryManager();
-        service         = new MemoryService(manager);
-        addTool         = new MemoryAddTool(service);
-        updateTool      = new MemoryUpdateTool(manager);
-        removeTool      = new MemoryRemoveTool(manager);
-        clearTool       = new MemoryClearTool(manager);
-        searchTool      = new MemorySearchTool(service);
-        summaryTool     = new MemorySummaryTool(service);
-        statsTool       = new MemoryStatsTool(service);
-        forgetTool      = new MemoryForgetTool(service);
-        consolidateTool = new MemoryConsolidateTool(service);
+        service     = new MemoryService(new MemoryManager());
+        addTool     = new MemoryAddTool(service);
+        searchTool  = new MemorySearchTool(service);
+        summaryTool = new MemorySummaryTool(service);
+        updateTool  = new MemoryUpdateTool(service);
+        removeTool  = new MemoryRemoveTool(service);
     }
 
-    // ── memory_add ────────────────────────────────────────────────────────────
+    // ── save_memory ───────────────────────────────────────────────────────────
 
     @Test
-    void addToolReturnsId() {
-        String result = addTool.execute(Map.of("type", "working", "content", "task A", "importance", "0.7"));
+    void saveReturnsId() {
+        String result = addTool.execute(Map.of(
+                "name", "no_mock_db", "description", "Do not mock the database",
+                "type", "feedback", "content", "Do not mock DB"));
         assertTrue(result.contains("id="));
         assertFalse(result.startsWith("Error:"));
     }
 
     @Test
-    void addToolMissingContentReturnsError() {
-        String result = addTool.execute(Map.of("type", "working"));
+    void saveMissingNameReturnsError() {
+        String result = addTool.execute(Map.of("type", "user", "description", "d", "content", "c"));
         assertTrue(result.startsWith("Error:"));
     }
 
     @Test
-    void addToolInvalidTypeReturnsError() {
-        String result = addTool.execute(Map.of("type", "bogus", "content", "x"));
+    void saveMissingContentReturnsError() {
+        String result = addTool.execute(Map.of("name", "n", "description", "d", "type", "user"));
         assertTrue(result.startsWith("Error:"));
     }
 
     @Test
-    void addToolDefaultsToWorking() {
-        String result = addTool.execute(Map.of("content", "hello"));
-        assertEquals(1, manager.listByType(MemoryType.WORKING).size());
-        assertFalse(result.startsWith("Error:"));
+    void saveInvalidTypeReturnsError() {
+        String result = addTool.execute(Map.of("name", "n", "description", "d", "type", "bogus", "content", "x"));
+        assertTrue(result.startsWith("Error:"));
     }
 
     @Test
-    void addToolPerceptualWithFilePath() {
-        addTool.execute(Map.of("type", "perceptual", "content", "dog photo", "importance", "0.7", "file_path", "dog.jpg"));
-        var entry = manager.listByType(MemoryType.PERCEPTUAL).get(0);
-        assertEquals("image", entry.metadata().get("modality"));
-        assertEquals("dog.jpg", entry.metadata().get("raw_data"));
+    void saveStoresNameAndDescriptionInMetadata() {
+        addTool.execute(Map.of(
+                "name", "prefer_tabs", "description", "User prefers tabs",
+                "type", "user", "content", "User prefers tabs over spaces."));
+        var entry = service.listByType(MemoryType.USER).get(0);
+        assertEquals("prefer_tabs",      entry.metadata().get("name"));
+        assertEquals("User prefers tabs", entry.description());
     }
 
     @Test
-    void addToolAttachesSessionId() {
-        addTool.execute(Map.of("type", "working", "content", "task", "importance", "0.5"));
-        var entry = manager.listByType(MemoryType.WORKING).get(0);
+    void saveAttachesSessionId() {
+        addTool.execute(Map.of(
+                "name", "n", "description", "d",
+                "type", "project", "content", "convention"));
+        var entry = service.listByType(MemoryType.PROJECT).get(0);
         assertTrue(entry.metadata().containsKey("session_id"));
         assertTrue(entry.metadata().containsKey("timestamp"));
     }
 
-    // ── memory_update ─────────────────────────────────────────────────────────
+    // ── search_memory ─────────────────────────────────────────────────────────
 
     @Test
-    void updateToolChangesEntry() {
-        String addResult = addTool.execute(Map.of("type", "semantic", "content", "old", "importance", "0.3"));
-        String id = addResult.split("id=")[1].split(" ")[0];
-        String result = updateTool.execute(Map.of("id", id, "content", "new", "importance", "0.9"));
-        assertFalse(result.startsWith("Error:"));
-        assertEquals("new", manager.get(id).get().content());
-    }
-
-    @Test
-    void updateToolMissingIdReturnsError() {
-        String result = updateTool.execute(Map.of("content", "x", "importance", "0.5"));
-        assertTrue(result.startsWith("Error:"));
-    }
-
-    @Test
-    void updateToolNotFoundReturnsError() {
-        String result = updateTool.execute(Map.of("id", "nope", "content", "x", "importance", "0.5"));
-        assertTrue(result.contains("not found") || result.startsWith("Error:"));
-    }
-
-    // ── memory_remove ─────────────────────────────────────────────────────────
-
-    @Test
-    void removeToolDeletesEntry() {
-        String addResult = addTool.execute(Map.of("type", "episodic", "content", "event", "importance", "0.5"));
-        String id = addResult.split("id=")[1].split(" ")[0];
-        String result = removeTool.execute(Map.of("id", id));
-        assertFalse(result.startsWith("Error:"));
-        assertTrue(manager.get(id).isEmpty());
-    }
-
-    @Test
-    void removeToolMissingIdReturnsError() {
-        String result = removeTool.execute(Map.of());
-        assertTrue(result.startsWith("Error:"));
-    }
-
-    // ── memory_clear ──────────────────────────────────────────────────────────
-
-    @Test
-    void clearToolRemovesAll() {
-        addTool.execute(Map.of("type", "working", "content", "A", "importance", "0.5"));
-        addTool.execute(Map.of("type", "semantic", "content", "B", "importance", "0.5"));
-        clearTool.execute(Map.of());
-        assertEquals(0, manager.listAll().size());
-    }
-
-    // ── memory_search ─────────────────────────────────────────────────────────
-
-    @Test
-    void searchToolFindsMatch() {
-        addTool.execute(Map.of("type", "semantic", "content", "Java programming", "importance", "0.8"));
-        String result = searchTool.execute(Map.of("query", "Java"));
-        assertTrue(result.contains("Java"));
+    void searchFindsMatch() {
+        addTool.execute(Map.of("name", "compliance_rewrite", "description", "Auth rewrite is compliance-driven",
+                "type", "project", "content", "compliance-driven rewrite"));
+        String result = searchTool.execute(Map.of("query", "compliance"));
+        assertTrue(result.contains("compliance"));
         assertTrue(result.contains("Found 1"));
     }
 
     @Test
-    void searchToolNoMatchMessage() {
+    void searchNoMatchMessage() {
         String result = searchTool.execute(Map.of("query", "xyz"));
         assertTrue(result.contains("No memories found"));
     }
 
     @Test
-    void searchToolMissingQueryReturnsError() {
+    void searchMissingQueryReturnsError() {
         String result = searchTool.execute(Map.of());
         assertTrue(result.startsWith("Error:"));
     }
 
-    // ── memory_stats ──────────────────────────────────────────────────────────
+    // ── list_memories ─────────────────────────────────────────────────────────
 
     @Test
-    void statsToolShowsTotal() {
-        addTool.execute(Map.of("type", "working", "content", "X", "importance", "0.5"));
-        String result = statsTool.execute(Map.of());
-        assertTrue(result.contains("total"));
-        assertTrue(result.contains("1"));
-    }
-
-    // ── memory_summary ────────────────────────────────────────────────────────
-
-    @Test
-    void summaryToolListsAllTypes() {
+    void listMemoriesContainsAllTypes() {
         String result = summaryTool.execute(Map.of());
         for (MemoryType type : MemoryType.values()) {
-            assertTrue(result.contains(type.displayName), "summary should mention " + type.displayName);
+            assertTrue(result.contains(type.displayName), "list should mention " + type.displayName);
         }
     }
 
-    // ── memory_forget ─────────────────────────────────────────────────────────
+    // ── update_memory ─────────────────────────────────────────────────────────
 
     @Test
-    void forgetToolEvictsEntries() {
-        addTool.execute(Map.of("type", "semantic", "content", "A", "importance", "0.1"));
-        addTool.execute(Map.of("type", "semantic", "content", "B", "importance", "0.9"));
-        String result = forgetTool.execute(Map.of("strategy", "lowest_importance", "count", "1"));
+    void updateChangesEntry() {
+        String addResult = addTool.execute(Map.of("name", "n", "description", "d", "type", "user", "content", "old"));
+        String id = addResult.split("id=")[1].split(" ")[0];
+        String result = updateTool.execute(Map.of("id", id, "content", "new"));
         assertFalse(result.startsWith("Error:"));
-        assertEquals(1, manager.listAll().size());
-        assertEquals("B", manager.listAll().get(0).content());
+        assertEquals("new", service.get(id).get().content());
     }
 
     @Test
-    void forgetToolDefaultsToLruCount1() {
-        addTool.execute(Map.of("type", "working", "content", "only", "importance", "0.5"));
-        String result = forgetTool.execute(Map.of());
+    void updateMissingIdReturnsError() {
+        String result = updateTool.execute(Map.of("content", "x"));
+        assertTrue(result.startsWith("Error:"));
+    }
+
+    @Test
+    void updateNotFoundReturnsError() {
+        String result = updateTool.execute(Map.of("id", "nope", "content", "x"));
+        assertTrue(result.contains("not found") || result.startsWith("Error:"));
+    }
+
+    // ── delete_memory ─────────────────────────────────────────────────────────
+
+    @Test
+    void deleteRemovesEntry() {
+        String addResult = addTool.execute(Map.of("name", "linear_ingest", "description", "Pipeline bugs in Linear INGEST",
+                "type", "reference", "content", "Linear INGEST"));
+        String id = addResult.split("id=")[1].split(" ")[0];
+        String result = removeTool.execute(Map.of("id", id));
         assertFalse(result.startsWith("Error:"));
-    }
-
-    // ── memory_consolidate ────────────────────────────────────────────────────
-
-    @Test
-    void consolidateToolPromotesEligibleEntries() {
-        addTool.execute(Map.of("type", "perceptual", "content", "hot signal", "importance", "0.8"));
-        String result = consolidateTool.execute(Map.of());
-        assertTrue(result.contains("1") || result.contains("promoted"));
-        assertEquals(0, manager.listByType(MemoryType.PERCEPTUAL).size());
-        assertEquals(1, manager.listByType(MemoryType.WORKING).size());
+        assertTrue(service.get(id).isEmpty());
     }
 
     @Test
-    void consolidateToolNothingToPromote() {
-        addTool.execute(Map.of("type", "perceptual", "content", "faint", "importance", "0.1"));
-        String result = consolidateTool.execute(Map.of());
-        assertTrue(result.contains("No memories") || result.contains("eligible"));
+    void deleteMissingIdReturnsError() {
+        String result = removeTool.execute(Map.of());
+        assertTrue(result.startsWith("Error:"));
     }
 
     // ── MemoryToolkit ─────────────────────────────────────────────────────────
 
     @Test
-    void toolkitRegistersNineTools() {
+    void toolkitRegistersFiveTools() {
         MemoryToolkit kit = new MemoryToolkit();
-        assertEquals(9, kit.getTools().size());
+        assertEquals(5, kit.getTools().size());
     }
 
     @Test
     void toolkitToolNamesAreUnique() {
         MemoryToolkit kit = new MemoryToolkit();
         long distinct = kit.getTools().stream().map(t -> t.name()).distinct().count();
-        assertEquals(9, distinct);
+        assertEquals(5, distinct);
+    }
+
+    @Test
+    void toolkitToolNamesMatchTutorial() {
+        MemoryToolkit kit = new MemoryToolkit();
+        var names = kit.getTools().stream().map(t -> t.name()).toList();
+        assertTrue(names.contains("save_memory"));
+        assertTrue(names.contains("search_memory"));
+        assertTrue(names.contains("list_memories"));
+        assertTrue(names.contains("update_memory"));
+        assertTrue(names.contains("delete_memory"));
     }
 }
