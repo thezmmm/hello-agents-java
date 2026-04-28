@@ -82,7 +82,7 @@ public final class ContextBuilder {
         List<ContextPacket> gathered   = gather(userQuery, systemInstructions, conversationHistory, customPackets);
         List<ContextPacket> selected   = select(gathered, userQuery);
         List<ContextPacket> compressed = compress(selected);
-        return assemble(compressed);
+        return structure(compressed, userQuery);
     }
 
     /** Convenience overload — only user query, no extra context. */
@@ -119,6 +119,7 @@ public final class ContextBuilder {
                         .withRelevance(0.6)
                         .withCreatedAt(Instant.ofEpochMilli(base + (long) i * 1_000))
                         .withTokenEstimate(estimateTokens(turn))
+                        .withMetadata(Map.of("type", "conversation"))
                         .build());
             }
         }
@@ -129,6 +130,7 @@ public final class ContextBuilder {
                     all.add(ContextPacket.of(entry.content())
                             .withCreatedAt(Instant.ofEpochMilli(entry.createdAt()))
                             .withTokenEstimate(estimateTokens(entry.content()))
+                            .withMetadata(Map.of("type", "memory"))
                             .build()));
         }
 
@@ -137,12 +139,16 @@ public final class ContextBuilder {
             rag.search(userQuery, ragTopK, ragMinScore).forEach(result ->
                     all.add(ContextPacket.of(result.content())
                             .withTokenEstimate(estimateTokens(result.content()))
+                            .withMetadata(Map.of("type", "rag_result"))
                             .build()));
         }
 
-        // customPackets: fill missing token estimates
+        // customPackets: preserve existing metadata; tag untyped packets as "custom"
         if (customPackets != null) {
-            customPackets.stream().map(this::withEstimateIfAbsent).forEach(all::add);
+            customPackets.stream()
+                    .map(this::withEstimateIfAbsent)
+                    .map(p -> p.metadata().containsKey("type") ? p : withType(p, "custom"))
+                    .forEach(p -> all.add(p));
         }
 
         return all.stream()
@@ -247,6 +253,17 @@ public final class ContextBuilder {
         return Math.max(1, cjk + (content.length() - cjk) / 4);
     }
 
+    private static ContextPacket withType(ContextPacket p, String type) {
+        Map<String, String> merged = new java.util.HashMap<>(p.metadata());
+        merged.put("type", type);
+        return ContextPacket.of(p.content())
+                .withRelevance(p.relevanceScore())
+                .withCreatedAt(p.createdAt())
+                .withTokenEstimate(p.tokenEstimate())
+                .withMetadata(merged)
+                .build();
+    }
+
     private ContextPacket withEstimateIfAbsent(ContextPacket p) {
         if (p.tokenEstimate() > 0) return p;
         return ContextPacket.of(p.content())
@@ -269,9 +286,45 @@ public final class ContextBuilder {
                 .build();
     }
 
-    private static String assemble(List<ContextPacket> packets) {
-        return packets.stream()
-                .map(ContextPacket::format)
-                .collect(Collectors.joining("\n"));
+    // ── Stage 3: Structure ────────────────────────────────────────────────────
+    // Groups packets by type and assembles a sectioned prompt template.
+
+    private static String structure(List<ContextPacket> packets, String userQuery) {
+        List<String> systemInstructions = new ArrayList<>();
+        List<String> evidence           = new ArrayList<>();
+        List<String> context            = new ArrayList<>();
+
+        for (ContextPacket p : packets) {
+            String type = p.metadata().getOrDefault("type", "general");
+            if ("system_instruction".equals(type)) {
+                systemInstructions.add(p.content());
+            } else if ("rag_result".equals(type) || "knowledge".equals(type) || "memory".equals(type)) {
+                evidence.add(p.content());
+            } else {
+                context.add(p.content());
+            }
+        }
+
+        List<String> sections = new ArrayList<>();
+
+        if (!systemInstructions.isEmpty()) {
+            sections.add("[Role & Policies]\n" + String.join("\n", systemInstructions));
+        }
+
+        if (userQuery != null && !userQuery.isBlank()) {
+            sections.add("[Task]\n" + userQuery);
+        }
+
+        if (!evidence.isEmpty()) {
+            sections.add("[Evidence]\n" + String.join("\n---\n", evidence));
+        }
+
+        if (!context.isEmpty()) {
+            sections.add("[Context]\n" + String.join("\n", context));
+        }
+
+        sections.add("[Output]\n请基于以上信息，提供准确、有据的回答。");
+
+        return String.join("\n\n", sections);
     }
 }
