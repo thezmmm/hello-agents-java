@@ -144,15 +144,6 @@ public final class ContextBuilder {
             customPackets.stream().map(this::withEstimateIfAbsent).forEach(all::add);
         }
 
-        // userQuery: latest timestamp, anchors the context to the current question
-        if (userQuery != null && !userQuery.isBlank()) {
-            all.add(ContextPacket.of(userQuery)
-                    .withRelevance(1.0)
-                    .withCreatedAt(Instant.now())
-                    .withTokenEstimate(estimateTokens(userQuery))
-                    .build());
-        }
-
         return all.stream()
                 .sorted(Comparator.comparing(ContextPacket::createdAt))
                 .collect(Collectors.toList());
