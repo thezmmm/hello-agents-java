@@ -1,5 +1,6 @@
 package com.helloagents.context;
 
+import com.helloagents.llm.Message;
 import com.helloagents.memory.MemoryService;
 import com.helloagents.memory.core.MemoryType;
 import com.helloagents.rag.app.RagSystem;
@@ -77,7 +78,7 @@ public final class ContextBuilder {
     public String build(
             String userQuery,
             String systemInstructions,
-            List<String> conversationHistory,
+            List<Message> conversationHistory,
             List<ContextPacket> customPackets) {
         List<ContextPacket> gathered  = gather(userQuery, systemInstructions, conversationHistory, customPackets);
         List<ContextPacket> selected  = select(gathered, userQuery);
@@ -95,7 +96,7 @@ public final class ContextBuilder {
     private List<ContextPacket> gather(
             String userQuery,
             String systemInstructions,
-            List<String> conversationHistory,
+            List<Message> conversationHistory,
             List<ContextPacket> customPackets) {
         List<ContextPacket> all = new ArrayList<>();
 
@@ -109,16 +110,17 @@ public final class ContextBuilder {
                     .build());
         }
 
-        // conversationHistory: ascending timestamps, fixed relevance 0.6
+        // conversationHistory: ascending timestamps preserve order; role prefix retained in content
         if (conversationHistory != null && !conversationHistory.isEmpty()) {
             int n = conversationHistory.size();
             long base = Instant.now().toEpochMilli() - n * 1_000L;
             for (int i = 0; i < n; i++) {
-                String turn = conversationHistory.get(i);
-                all.add(ContextPacket.of(turn)
+                Message msg = conversationHistory.get(i);
+                String content = msg.role() + ": " + msg.content();
+                all.add(ContextPacket.of(content)
                         .withRelevance(0.6)
                         .withCreatedAt(Instant.ofEpochMilli(base + (long) i * 1_000))
-                        .withTokenEstimate(estimateTokens(turn))
+                        .withTokenEstimate(estimateTokens(content))
                         .withMetadata(Map.of("type", "conversation"))
                         .build());
             }
