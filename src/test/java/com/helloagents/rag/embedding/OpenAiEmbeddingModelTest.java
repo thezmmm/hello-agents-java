@@ -27,8 +27,17 @@ class OpenAiEmbeddingModelTest {
         }
     }
 
-    private static final String BASE_URL = System.getenv().getOrDefault("LLM_BASE_URL",
-            System.getProperty("LLM_BASE_URL", "https://api.openai.com/v1"));
+    private static final String BASE_URL = resolveBaseUrl();
+
+    private static String resolveBaseUrl() {
+        String url = System.getenv("LLM_BASE_URL");
+        if (url != null && !url.isBlank()) return url;
+        try {
+            String fromEnv = Dotenv.load().get("LLM_BASE_URL", null);
+            if (fromEnv != null && !fromEnv.isBlank()) return fromEnv;
+        } catch (DotenvException ignored) {}
+        return "https://api.openai.com/v1";
+    }
 
     /** 集成测试前检查，没有 Key 则跳过，不报错 */
     @BeforeEach
