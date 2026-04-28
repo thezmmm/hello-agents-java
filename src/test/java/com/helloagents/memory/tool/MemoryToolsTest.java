@@ -6,6 +6,8 @@ import com.helloagents.memory.core.MemoryType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class MemoryToolsTest {
@@ -42,33 +44,33 @@ class MemoryToolsTest {
 
     @Test
     void addToolReturnsId() {
-        String result = addTool.execute("type=working|content=task A|importance=0.7");
+        String result = addTool.execute(Map.of("type", "working", "content", "task A", "importance", "0.7"));
         assertTrue(result.contains("id="));
         assertFalse(result.startsWith("Error:"));
     }
 
     @Test
     void addToolMissingContentReturnsError() {
-        String result = addTool.execute("type=working");
+        String result = addTool.execute(Map.of("type", "working"));
         assertTrue(result.startsWith("Error:"));
     }
 
     @Test
     void addToolInvalidTypeReturnsError() {
-        String result = addTool.execute("type=bogus|content=x");
+        String result = addTool.execute(Map.of("type", "bogus", "content", "x"));
         assertTrue(result.startsWith("Error:"));
     }
 
     @Test
     void addToolDefaultsToWorking() {
-        String result = addTool.execute("content=hello");
+        String result = addTool.execute(Map.of("content", "hello"));
         assertEquals(1, manager.listByType(MemoryType.WORKING).size());
         assertFalse(result.startsWith("Error:"));
     }
 
     @Test
     void addToolPerceptualWithFilePath() {
-        addTool.execute("type=perceptual|content=dog photo|importance=0.7|file_path=dog.jpg");
+        addTool.execute(Map.of("type", "perceptual", "content", "dog photo", "importance", "0.7", "file_path", "dog.jpg"));
         var entry = manager.listByType(MemoryType.PERCEPTUAL).get(0);
         assertEquals("image", entry.metadata().get("modality"));
         assertEquals("dog.jpg", entry.metadata().get("raw_data"));
@@ -76,7 +78,7 @@ class MemoryToolsTest {
 
     @Test
     void addToolAttachesSessionId() {
-        addTool.execute("type=working|content=task|importance=0.5");
+        addTool.execute(Map.of("type", "working", "content", "task", "importance", "0.5"));
         var entry = manager.listByType(MemoryType.WORKING).get(0);
         assertTrue(entry.metadata().containsKey("session_id"));
         assertTrue(entry.metadata().containsKey("timestamp"));
@@ -86,22 +88,22 @@ class MemoryToolsTest {
 
     @Test
     void updateToolChangesEntry() {
-        String addResult = addTool.execute("type=semantic|content=old|importance=0.3");
+        String addResult = addTool.execute(Map.of("type", "semantic", "content", "old", "importance", "0.3"));
         String id = addResult.split("id=")[1].split(" ")[0];
-        String result = updateTool.execute("id=%s|content=new|importance=0.9".formatted(id));
+        String result = updateTool.execute(Map.of("id", id, "content", "new", "importance", "0.9"));
         assertFalse(result.startsWith("Error:"));
         assertEquals("new", manager.get(id).get().content());
     }
 
     @Test
     void updateToolMissingIdReturnsError() {
-        String result = updateTool.execute("content=x|importance=0.5");
+        String result = updateTool.execute(Map.of("content", "x", "importance", "0.5"));
         assertTrue(result.startsWith("Error:"));
     }
 
     @Test
     void updateToolNotFoundReturnsError() {
-        String result = updateTool.execute("id=nope|content=x|importance=0.5");
+        String result = updateTool.execute(Map.of("id", "nope", "content", "x", "importance", "0.5"));
         assertTrue(result.contains("not found") || result.startsWith("Error:"));
     }
 
@@ -109,16 +111,16 @@ class MemoryToolsTest {
 
     @Test
     void removeToolDeletesEntry() {
-        String addResult = addTool.execute("type=episodic|content=event|importance=0.5");
+        String addResult = addTool.execute(Map.of("type", "episodic", "content", "event", "importance", "0.5"));
         String id = addResult.split("id=")[1].split(" ")[0];
-        String result = removeTool.execute("id=" + id);
+        String result = removeTool.execute(Map.of("id", id));
         assertFalse(result.startsWith("Error:"));
         assertTrue(manager.get(id).isEmpty());
     }
 
     @Test
     void removeToolMissingIdReturnsError() {
-        String result = removeTool.execute("");
+        String result = removeTool.execute(Map.of());
         assertTrue(result.startsWith("Error:"));
     }
 
@@ -126,9 +128,9 @@ class MemoryToolsTest {
 
     @Test
     void clearToolRemovesAll() {
-        addTool.execute("type=working|content=A|importance=0.5");
-        addTool.execute("type=semantic|content=B|importance=0.5");
-        clearTool.execute("");
+        addTool.execute(Map.of("type", "working", "content", "A", "importance", "0.5"));
+        addTool.execute(Map.of("type", "semantic", "content", "B", "importance", "0.5"));
+        clearTool.execute(Map.of());
         assertEquals(0, manager.listAll().size());
     }
 
@@ -136,21 +138,21 @@ class MemoryToolsTest {
 
     @Test
     void searchToolFindsMatch() {
-        addTool.execute("type=semantic|content=Java programming|importance=0.8");
-        String result = searchTool.execute("query=Java");
+        addTool.execute(Map.of("type", "semantic", "content", "Java programming", "importance", "0.8"));
+        String result = searchTool.execute(Map.of("query", "Java"));
         assertTrue(result.contains("Java"));
         assertTrue(result.contains("Found 1"));
     }
 
     @Test
     void searchToolNoMatchMessage() {
-        String result = searchTool.execute("query=xyz");
+        String result = searchTool.execute(Map.of("query", "xyz"));
         assertTrue(result.contains("No memories found"));
     }
 
     @Test
     void searchToolMissingQueryReturnsError() {
-        String result = searchTool.execute("");
+        String result = searchTool.execute(Map.of());
         assertTrue(result.startsWith("Error:"));
     }
 
@@ -158,8 +160,8 @@ class MemoryToolsTest {
 
     @Test
     void statsToolShowsTotal() {
-        addTool.execute("type=working|content=X|importance=0.5");
-        String result = statsTool.execute("");
+        addTool.execute(Map.of("type", "working", "content", "X", "importance", "0.5"));
+        String result = statsTool.execute(Map.of());
         assertTrue(result.contains("total"));
         assertTrue(result.contains("1"));
     }
@@ -168,7 +170,7 @@ class MemoryToolsTest {
 
     @Test
     void summaryToolListsAllTypes() {
-        String result = summaryTool.execute("");
+        String result = summaryTool.execute(Map.of());
         for (MemoryType type : MemoryType.values()) {
             assertTrue(result.contains(type.displayName), "summary should mention " + type.displayName);
         }
@@ -178,9 +180,9 @@ class MemoryToolsTest {
 
     @Test
     void forgetToolEvictsEntries() {
-        addTool.execute("type=semantic|content=A|importance=0.1");
-        addTool.execute("type=semantic|content=B|importance=0.9");
-        String result = forgetTool.execute("strategy=lowest_importance|count=1");
+        addTool.execute(Map.of("type", "semantic", "content", "A", "importance", "0.1"));
+        addTool.execute(Map.of("type", "semantic", "content", "B", "importance", "0.9"));
+        String result = forgetTool.execute(Map.of("strategy", "lowest_importance", "count", "1"));
         assertFalse(result.startsWith("Error:"));
         assertEquals(1, manager.listAll().size());
         assertEquals("B", manager.listAll().get(0).content());
@@ -188,8 +190,8 @@ class MemoryToolsTest {
 
     @Test
     void forgetToolDefaultsToLruCount1() {
-        addTool.execute("type=working|content=only|importance=0.5");
-        String result = forgetTool.execute("");
+        addTool.execute(Map.of("type", "working", "content", "only", "importance", "0.5"));
+        String result = forgetTool.execute(Map.of());
         assertFalse(result.startsWith("Error:"));
     }
 
@@ -197,8 +199,8 @@ class MemoryToolsTest {
 
     @Test
     void consolidateToolPromotesEligibleEntries() {
-        addTool.execute("type=perceptual|content=hot signal|importance=0.8");
-        String result = consolidateTool.execute("");
+        addTool.execute(Map.of("type", "perceptual", "content", "hot signal", "importance", "0.8"));
+        String result = consolidateTool.execute(Map.of());
         assertTrue(result.contains("1") || result.contains("promoted"));
         assertEquals(0, manager.listByType(MemoryType.PERCEPTUAL).size());
         assertEquals(1, manager.listByType(MemoryType.WORKING).size());
@@ -206,8 +208,8 @@ class MemoryToolsTest {
 
     @Test
     void consolidateToolNothingToPromote() {
-        addTool.execute("type=perceptual|content=faint|importance=0.1");
-        String result = consolidateTool.execute("");
+        addTool.execute(Map.of("type", "perceptual", "content", "faint", "importance", "0.1"));
+        String result = consolidateTool.execute(Map.of());
         assertTrue(result.contains("No memories") || result.contains("eligible"));
     }
 

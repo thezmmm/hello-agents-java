@@ -2,6 +2,8 @@ package com.helloagents.tools;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class CalculatorToolTest {
@@ -10,33 +12,33 @@ class CalculatorToolTest {
 
     @Test
     void addition() {
-        assertEquals("5", calc.execute("2 + 3"));
+        assertEquals("5", calc.execute(Map.of("expression", "2 + 3")));
     }
 
     @Test
     void multiplicationPrecedence() {
-        assertEquals("14", calc.execute("2 + 3 * 4"));
+        assertEquals("14", calc.execute(Map.of("expression", "2 + 3 * 4")));
     }
 
     @Test
     void parentheses() {
-        assertEquals("20", calc.execute("(2 + 3) * 4"));
+        assertEquals("20", calc.execute(Map.of("expression", "(2 + 3) * 4")));
     }
 
     @Test
     void power() {
-        assertEquals("8", calc.execute("2^3"));
+        assertEquals("8", calc.execute(Map.of("expression", "2^3")));
     }
 
     @Test
     void decimalResult() {
-        assertEquals("2.5", calc.execute("5 / 2"));
+        assertEquals("2.5", calc.execute(Map.of("expression", "5 / 2")));
     }
 
     @Test
     void unknownTool() {
         ToolRegistry registry = new ToolRegistry().register(calc);
-        String result = registry.execute("unknown", "1+1");
+        String result = registry.execute("unknown", "{}");
         assertTrue(result.startsWith("Error: unknown tool"));
     }
 }

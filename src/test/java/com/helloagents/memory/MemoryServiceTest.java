@@ -241,14 +241,6 @@ class MemoryServiceTest {
     }
 
     @Test
-    void parseParamsExtractsKeyValues() {
-        Map<String, String> p = MemoryService.parseParams("type=WORKING|content=hello|importance=0.8");
-        assertEquals("WORKING", p.get("type"));
-        assertEquals("hello", p.get("content"));
-        assertEquals("0.8", p.get("importance"));
-    }
-
-    @Test
     void parseDoubleHandlesInvalid() {
         assertEquals(0.5, MemoryService.parseDouble("bad", 0.5));
         assertEquals(0.7, MemoryService.parseDouble("0.7", 0.5));
