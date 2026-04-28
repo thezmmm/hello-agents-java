@@ -34,9 +34,12 @@ public final class ContextBuilder {
 
     // ── Data sources (wired at construction, reused across builds) ────────────
     private MemoryService memory;
-    private MemoryType[]  memoryTypes = new MemoryType[0];
+    private MemoryType[]  memoryTypes      = new MemoryType[0];
+    private int           memoryLimit      = Integer.MAX_VALUE;
+    private double        memoryMinImportance = 0.0;
     private RagSystem     rag;
-    private int           ragTopK     = 5;
+    private int           ragTopK          = 5;
+    private double        ragMinScore      = 0.0;
 
     public ContextBuilder(ContextConfig config) {
         this.config = config;
@@ -48,9 +51,20 @@ public final class ContextBuilder {
         return this;
     }
 
-    public ContextBuilder withRag(RagSystem rag, int topK) {
-        this.rag    = rag;
+    public ContextBuilder withMemoryFilter(int limit, double minImportance) {
+        this.memoryLimit         = limit;
+        this.memoryMinImportance = minImportance;
+        return this;
+    }
+
+    public ContextBuilder withRag(RagSystem rag) {
+        this.rag     = rag;
+        return this;
+    }
+
+    public ContextBuilder withRagFilter(int topK, double minScore) {
         this.ragTopK = topK;
+        this.ragMinScore = minScore;
         return this;
     }
 
@@ -106,9 +120,9 @@ public final class ContextBuilder {
             }
         }
 
-        // memory: search with userQuery
+        // memory: search with userQuery, apply limit and minImportance
         if (memory != null && userQuery != null && !userQuery.isBlank()) {
-            memory.search(userQuery, memoryTypes).forEach(entry ->
+            memory.search(userQuery, memoryLimit, memoryMinImportance, memoryTypes).forEach(entry ->
                     all.add(ContextPacket.of(entry.content())
                             .withRelevance(entry.importance())
                             .withCreatedAt(Instant.ofEpochMilli(entry.createdAt()))
@@ -116,9 +130,9 @@ public final class ContextBuilder {
                             .build()));
         }
 
-        // RAG: retrieve top-k chunks with userQuery
+        // RAG: retrieve top-k chunks with userQuery, filter by minScore
         if (rag != null && userQuery != null && !userQuery.isBlank()) {
-            rag.search(userQuery, ragTopK).forEach(result ->
+            rag.search(userQuery, ragTopK, ragMinScore).forEach(result ->
                     all.add(ContextPacket.of(result.content())
                             .withRelevance(result.score())
                             .withTokenEstimate(estimateTokens(result.content()))

@@ -104,13 +104,25 @@ public class MemoryService {
      * Results are ranked by importance descending.
      */
     public List<MemoryEntry> search(String query, MemoryType... types) {
+        return search(query, Integer.MAX_VALUE, 0.0, types);
+    }
+
+    /**
+     * Keyword search with limit and minimum importance threshold.
+     *
+     * @param limit         maximum number of results to return
+     * @param minImportance entries below this importance are excluded [0.0, 1.0]
+     */
+    public List<MemoryEntry> search(String query, int limit, double minImportance, MemoryType... types) {
         String q = query.toLowerCase();
         List<MemoryEntry> candidates = types.length == 0
                 ? manager.listAll()
                 : Arrays.stream(types).flatMap(t -> manager.listByType(t).stream()).toList();
         return candidates.stream()
+                .filter(e -> e.importance() >= minImportance)
                 .filter(e -> e.content().toLowerCase().contains(q) || e.id().equalsIgnoreCase(q))
                 .sorted(Comparator.comparingDouble(MemoryEntry::importance).reversed())
+                .limit(limit)
                 .toList();
     }
 

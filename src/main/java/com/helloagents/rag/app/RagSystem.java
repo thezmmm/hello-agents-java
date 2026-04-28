@@ -74,6 +74,17 @@ public class RagSystem {
         return queryPipeline.query(query, topK);
     }
 
+    /**
+     * Semantic search with a minimum score threshold applied after retrieval.
+     *
+     * @param minScore results below this cosine-similarity score are excluded [0.0, 1.0]
+     */
+    public List<SearchResult> search(String query, int topK, double minScore) {
+        return queryPipeline.query(query, topK).stream()
+                .filter(r -> r.score() >= minScore)
+                .toList();
+    }
+
     public List<SearchResult> search(String query) {
         return queryPipeline.query(query, Retriever.DEFAULT_TOP_K);
     }
