@@ -148,12 +148,12 @@ mvn test
 通用对话 Agent，支持多轮对话历史、工具调用循环和流式输出。
 
 ```java
-LlmConfig config = LlmConfig.fromEnv();
-SimpleAgent agent = new SimpleAgent(config);
+LlmClient llm = LlmClient.fromEnv();
+SimpleAgent agent = new SimpleAgent(llm);
 
 // 注册工具（Lambda 方式）
 agent.register("word_count", "统计输入字符串的词数",
-    input -> String.valueOf(input.split("\\s+").length));
+    params -> String.valueOf(params.getOrDefault("text", "").split("\\s+").length));
 
 // 基础对话
 String reply = agent.chat("Java 17 有哪些新特性？");
@@ -164,12 +164,14 @@ agent.stream("解释一下 ReAct 框架", token -> System.out.print(token));
 
 ### ReActAgent
 
-实现ReAct推理-行动框架。每次迭代经历 **Thought → Action → Observation** 三步，遇到 `Action: Finish` 时终止。
+实现 ReAct 推理-行动框架。模型通过 native function calling 调用工具，调用内置 `finish` 工具时终止循环。
 
 ```java
-ReActAgent agent = new ReActAgent(config);
-agent.register("calculator", "计算数学表达式", input -> /* eval */);
-String result = agent.chat("如果一个正方形面积是 144，它的周长是多少？");
+LlmClient llm = LlmClient.fromEnv();
+ReActAgent agent = new ReActAgent(llm);
+agent.register("calculator", "计算数学表达式",
+    params -> /* eval params.get("expression") */);
+String result = agent.run("如果一个正方形面积是 144，它的周长是多少？");
 ```
 
 ### ReflectionAgent
@@ -180,8 +182,9 @@ String result = agent.chat("如果一个正方形面积是 144，它的周长是
 3. **Refine** — 根据反思优化输出
 
 ```java
-ReflectionAgent agent = new ReflectionAgent(config);
-String result = agent.chat("写一篇关于量子计算的简介");
+LlmClient llm = LlmClient.fromEnv();
+ReflectionAgent agent = new ReflectionAgent(llm);
+String result = agent.run("写一篇关于量子计算的简介");
 ```
 
 ### PlanAndSolveAgent
@@ -191,23 +194,30 @@ String result = agent.chat("写一篇关于量子计算的简介");
 2. **Solve** — 逐步执行，调用工具（Solver）
 
 ```java
-PlanAndSolveAgent agent = new PlanAndSolveAgent(config);
-agent.register("search", "搜索信息", input -> /* search api */);
-String result = agent.chat("调研并总结 2024 年大模型发展趋势");
+LlmClient llm = LlmClient.fromEnv();
+PlanAndSolveAgent agent = new PlanAndSolveAgent(llm);
+agent.register("search", "搜索信息", params -> /* search api */);
+String result = agent.run("调研并总结 2024 年大模型发展趋势");
 ```
 
 ---
 
 ## 工具系统
 
-所有 Agent 共用同一套工具调用格式：`[TOOL_CALL:tool_name:input]`
+基于 OpenAI 原生 function calling 协议，无需文本解析。工具的参数 schema 自动序列化为 JSON 提交给模型，结果以 `tool` 角色消息回传。
 
 ```java
 // 实现 Tool 接口
 public class SearchTool implements Tool {
     public String name() { return "search"; }
     public String description() { return "搜索互联网信息"; }
-    public String execute(String query) { /* ... */ }
+    public ToolParameter parameters() {
+        return ToolParameter.of(ToolParameter.Param.required("query", "搜索关键词", "string"));
+    }
+    public String execute(Map<String, String> params) {
+        String query = params.get("query");
+        // ...
+    }
 }
 
 // 注册到 Agent
@@ -215,31 +225,46 @@ agent.register(new SearchTool());
 
 // 也支持 Lambda 快速注册
 agent.register("reverse", "反转字符串",
-    input -> new StringBuilder(input).reverse().toString());
+    params -> new StringBuilder(params.getOrDefault("text", "")).reverse().toString());
 ```
 
-工具 schema 会自动注入 system prompt，LLM 输出中的工具调用由 `ToolRegistry` 解析并执行，结果以 `Observation:` 形式反馈给模型。
+工具 schema 自动序列化为 JSON Schema 并传入 API，模型结构化返回工具调用，`ToolRegistry` 按名称派发执行。
 
 ---
 
 ## 记忆系统
 
-四层认知记忆架构，模拟人类记忆机制：
+跨会话 Agent 记忆系统，让 Agent 在对话结束后仍能保留关键信息。默认使用内存存储（`InMemoryStore`），也可切换到 `MarkdownMemoryStore` 将每条记忆持久化为带 YAML frontmatter 的 `.md` 文件。
 
-| 记忆类型 | 容量 | 衰减策略 | 适用场景 |
-|---------|------|---------|---------|
-| **感知记忆** (Perceptual) | 默认 5 条 | 超出容量即淘汰最旧 | 即时感知、原始输入 |
-| **工作记忆** (Working) | 默认 10 条 | TTL 过期 + 容量淘汰 | 当前任务上下文 |
-| **情节记忆** (Episodic) | 无上限 | 基于事件 | 历史事件与时序 |
-| **语义记忆** (Semantic) | 无上限 | 隐式整合 | 抽象事实与知识 |
+**四种记忆类型：**
 
-提供 9 个 Agent 可调用的记忆工具：`memory_add`、`memory_search`、`memory_update`、`memory_remove`、`memory_consolidate`、`memory_forget`、`memory_summary`、`memory_stats`、`memory_clear`。
+| 类型 | 说明 | 适用场景 |
+|------|------|----------|
+| `user` | 用户偏好 | 代码风格、响应详略、工具链习惯 |
+| `feedback` | 用户纠正 | 明确纠正过的错误，或已验证有效的做法 |
+| `project` | 项目约定 | 无法从代码推导的设计决策、团队规则 |
+| `reference` | 外部资源 | 问题单看板、监控面板、文档 URL |
+
+**5 个 Agent 工具：**
+
+| 工具 | 说明 |
+|------|------|
+| `save_memory` | 保存一条跨会话记忆（需提供 name、description、type、content） |
+| `search_memory` | 按关键词检索，可按 type 过滤 |
+| `list_memories` | 列出全部记忆，按类型分组 |
+| `update_memory` | 更新已有记忆的内容（需先 search_memory 取 id） |
+| `delete_memory` | 删除失效或用户明确撤销的记忆 |
 
 ```java
-MemoryManager memory = new MemoryManager();
-MemoryToolkit toolkit = new MemoryToolkit(memory);
+// 内存存储（默认）
+MemoryToolkit toolkit = new MemoryToolkit();
 
-SimpleAgent agent = new SimpleAgent(config);
+// 持久化到 Markdown 文件
+MemoryManager manager = new MemoryManager(new MarkdownMemoryStore(Path.of(".agent-memory")));
+MemoryToolkit toolkit = new MemoryToolkit(new MemoryService(manager));
+
+LlmClient llm = LlmClient.fromEnv();
+SimpleAgent agent = new SimpleAgent(llm);
 toolkit.getTools().forEach(agent::register);
 ```
 
