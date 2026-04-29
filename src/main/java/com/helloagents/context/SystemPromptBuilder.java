@@ -1,6 +1,5 @@
 package com.helloagents.context;
 
-import com.helloagents.llm.Message;
 import com.helloagents.memory.MemoryService;
 import com.helloagents.rag.app.RagSystem;
 import com.helloagents.rag.core.Embedding;
@@ -24,18 +23,14 @@ import java.util.stream.Collectors;
  * Each {@code build()} call supplies the per-request context.
  *
  * <pre>
- *   ContextBuilder builder = new ContextBuilder(config)
+ *   SystemPromptBuilder builder = new SystemPromptBuilder(config)
  *       .withMemory(memory)
- *       .withRag(rag, 5);
+ *       .withRag(rag);
  *
- *   String ctx = builder.build(
- *       "用户的问题",
- *       "You are a helpful assistant.",
- *       history,
- *       List.of());
+ *   String systemMsg = builder.build("用户的问题", "You are a helpful assistant.");
  * </pre>
  */
-public final class ContextBuilder {
+public final class SystemPromptBuilder {
 
     private final ContextConfig config;
 
@@ -45,21 +40,21 @@ public final class ContextBuilder {
     private int            ragTopK    = 5;
     private double         ragMinScore = 0.0;
 
-    public ContextBuilder(ContextConfig config) {
+    public SystemPromptBuilder(ContextConfig config) {
         this.config = config;
     }
 
-    public ContextBuilder withMemory(MemoryService memory) {
+    public SystemPromptBuilder withMemory(MemoryService memory) {
         this.memory = memory;
         return this;
     }
 
-    public ContextBuilder withRag(RagSystem rag) {
+    public SystemPromptBuilder withRag(RagSystem rag) {
         this.rag     = rag;
         return this;
     }
 
-    public ContextBuilder withRagFilter(int topK, double minScore) {
+    public SystemPromptBuilder withRagFilter(int topK, double minScore) {
         this.ragTopK = topK;
         this.ragMinScore = minScore;
         return this;
@@ -68,29 +63,21 @@ public final class ContextBuilder {
 
     // ── Build ─────────────────────────────────────────────────────────────────
 
-    public String build(
-            String userQuery,
-            String systemInstructions,
-            List<Message> conversationHistory,
-            List<ContextPacket> customPackets) {
-        List<ContextPacket> gathered  = gather(userQuery, systemInstructions, conversationHistory, customPackets);
-        List<ContextPacket> selected  = select(gathered, userQuery);
-        String              structured = structure(selected, userQuery);
+    public String build(String userQuery, String systemInstructions) {
+        List<ContextPacket> gathered   = gather(userQuery, systemInstructions);
+        List<ContextPacket> selected   = select(gathered, userQuery);
+        String              structured = structure(selected);
         return compress(structured);
     }
 
-    /** Convenience overload — only user query, no extra context. */
+    /** Convenience overload — only user query, no system instructions. */
     public String build(String userQuery) {
-        return build(userQuery, null, List.of(), List.of());
+        return build(userQuery, null);
     }
 
     // ── Stage 1: Gather ───────────────────────────────────────────────────────
 
-    private List<ContextPacket> gather(
-            String userQuery,
-            String systemInstructions,
-            List<Message> conversationHistory,
-            List<ContextPacket> customPackets) {
+    private List<ContextPacket> gather(String userQuery, String systemInstructions) {
         List<ContextPacket> all = new ArrayList<>();
 
         // systemInstructions: EPOCH timestamp → always sorted to front
@@ -103,22 +90,6 @@ public final class ContextBuilder {
                     .build());
         }
 
-        // conversationHistory: ascending timestamps preserve order; role prefix retained in content
-        if (conversationHistory != null && !conversationHistory.isEmpty()) {
-            int n = conversationHistory.size();
-            long base = Instant.now().toEpochMilli() - n * 1_000L;
-            for (int i = 0; i < n; i++) {
-                Message msg = conversationHistory.get(i);
-                String content = msg.role() + ": " + msg.content();
-                all.add(ContextPacket.of(content)
-                        .withRelevance(0.6)
-                        .withCreatedAt(Instant.ofEpochMilli(base + (long) i * 1_000))
-                        .withTokenEstimate(estimateTokens(content))
-                        .withMetadata(Map.of("type", "conversation"))
-                        .build());
-            }
-        }
-
         // RAG: no explicit relevance → defaults to 0.5, select recalculates via user query
         if (rag != null && userQuery != null && !userQuery.isBlank()) {
             rag.search(userQuery, ragTopK, ragMinScore).forEach(result ->
@@ -126,14 +97,6 @@ public final class ContextBuilder {
                             .withTokenEstimate(estimateTokens(result.content()))
                             .withMetadata(Map.of("type", "rag_result"))
                             .build()));
-        }
-
-        // customPackets: preserve existing metadata; tag untyped packets as "custom"
-        if (customPackets != null) {
-            customPackets.stream()
-                    .map(this::withEstimateIfAbsent)
-                    .map(p -> p.metadata().containsKey("type") ? p : withType(p, "custom"))
-                    .forEach(p -> all.add(p));
         }
 
         return all.stream()
@@ -152,7 +115,7 @@ public final class ContextBuilder {
                 .filter(p -> !"system_instruction".equals(p.metadata().get("type")))
                 .collect(Collectors.toList());
 
-        int systemTokens    = systemPackets.stream().mapToInt(ContextBuilder::estimateTokens).sum();
+        int systemTokens    = systemPackets.stream().mapToInt(SystemPromptBuilder::estimateTokens).sum();
         int remainingTokens = config.availableTokens() - systemTokens;
 
         if (remainingTokens <= 0) return systemPackets;
@@ -313,27 +276,6 @@ public final class ContextBuilder {
         return Math.max(1, (int) (cjk + words * 1.3));
     }
 
-    private static ContextPacket withType(ContextPacket p, String type) {
-        Map<String, String> merged = new java.util.HashMap<>(p.metadata());
-        merged.put("type", type);
-        return ContextPacket.of(p.content())
-                .withRelevance(p.relevanceScore())
-                .withCreatedAt(p.createdAt())
-                .withTokenEstimate(p.tokenEstimate())
-                .withMetadata(merged)
-                .build();
-    }
-
-    private ContextPacket withEstimateIfAbsent(ContextPacket p) {
-        if (p.tokenEstimate() > 0) return p;
-        return ContextPacket.of(p.content())
-                .withRelevance(p.relevanceScore())
-                .withCreatedAt(p.createdAt())
-                .withTokenEstimate(estimateTokens(p.content()))
-                .withMetadata(p.metadata())
-                .build();
-    }
-
     private static String truncateText(String text, int maxTokens) {
         int total = estimateTokens(text);
         if (total == 0) return text;
@@ -344,10 +286,9 @@ public final class ContextBuilder {
     // ── Stage 3: Structure ────────────────────────────────────────────────────
     // Groups packets by type and assembles a sectioned prompt template.
 
-    private String structure(List<ContextPacket> packets, String userQuery) {
+    private String structure(List<ContextPacket> packets) {
         List<String> systemInstructions = new ArrayList<>();
         List<String> evidence           = new ArrayList<>();
-        List<String> context            = new ArrayList<>();
 
         for (ContextPacket p : packets) {
             String type = p.metadata().getOrDefault("type", "general");
@@ -355,8 +296,6 @@ public final class ContextBuilder {
                 systemInstructions.add(p.content());
             } else if ("rag_result".equals(type) || "knowledge".equals(type)) {
                 evidence.add(p.content());
-            } else {
-                context.add(p.content());
             }
         }
 
@@ -371,16 +310,8 @@ public final class ContextBuilder {
                     + "\n\n如需查看具体记忆内容，请使用 search_memory 工具检索。");
         }
 
-        if (userQuery != null && !userQuery.isBlank()) {
-            sections.add("[Task]\n" + userQuery);
-        }
-
         if (!evidence.isEmpty()) {
             sections.add("[Evidence]\n" + String.join("\n---\n", evidence));
-        }
-
-        if (!context.isEmpty()) {
-            sections.add("[Context]\n" + String.join("\n", context));
         }
 
         sections.add("[Output]\n请基于以上信息，提供准确、有据的回答。");
