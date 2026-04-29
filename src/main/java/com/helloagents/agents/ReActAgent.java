@@ -1,90 +1,74 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
+import com.helloagents.llm.FunctionCall;
 import com.helloagents.llm.LlmClient;
+import com.helloagents.llm.LlmResponse;
 import com.helloagents.llm.Message;
-import com.helloagents.tools.ToolCall;
+import com.helloagents.tools.Tool;
+import com.helloagents.tools.ToolParameter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
- * ReAct (Reasoning + Acting) agent.
+ * ReAct (Reasoning + Acting) agent using native function calling.
  *
- * <p>Implements the ReAct loop described in <em>ReAct: Synergizing Reasoning and Acting in
- * Language Models</em> (Yao et al., 2022). Each iteration the LLM produces:
- * <ol>
- *   <li>Thought — reasoning about what to do next</li>
- *   <li>Action — tool call in the form {@code Action: tool_name[input]}</li>
- *   <li>Observation — result of executing the tool</li>
- * </ol>
- * The loop continues until the LLM emits {@code Action: Finish}, with the final answer in the Thought.
+ * <p>Each iteration the model may call any registered tool to gather information.
+ * When it has a final answer it calls the built-in {@code finish} tool, ending the loop.
+ * The model's reasoning appears in the {@code content} field; tool calls appear in the
+ * structured {@code tool_calls} field — no text parsing required.
  *
  * <p>Construction:
  * <pre>
- *   // minimal
- *   new ReActAgent(llm, toolRegistry)
- *
- *   // full
- *   new ReActAgent("MyAgent", llm, toolRegistry, systemPrompt, customPrompt, 5)
+ *   new ReActAgent(llm)
+ *   new ReActAgent("MyAgent", llm, systemPrompt, maxSteps)
  * </pre>
  */
 public class ReActAgent extends AbstractAgent {
 
-    private static final String DEFAULT_NAME       = "ReActAgent";
-    private static final int    DEFAULT_MAX_STEPS  = 10;
+    private static final String DEFAULT_NAME      = "ReActAgent";
+    private static final int    DEFAULT_MAX_STEPS = 10;
 
-    /**
-     * Default ReAct prompt template. {@code %s} is replaced with tool descriptions at runtime.
-     * Pass a {@code customPrompt} to the full constructor to override this entirely.
-     *
-     * <p>Tool calls use the project-standard {@code [TOOL_CALL:tool_name:input]} format so that
-     * {@link com.helloagents.tools.ToolRegistry#parseToolCalls} can be reused directly.
-     */
-    private static final String DEFAULT_REACT_PROMPT = """
-            You are a reasoning agent that solves tasks step by step using available tools.
-
-            At each step, respond in this exact format:
-            Thought: <your reasoning about what to do next>
-            Action: [TOOL_CALL:tool_name:{"param":"value"}]
-
-            When you have enough information to answer the user, respond with:
-            Thought: <your final answer>
-            Action: Finish
-
-            Available tools:
-            %s
+    private static final String DEFAULT_SYSTEM_PROMPT = """
+            You are a problem-solving agent. Think step by step and use tools to gather information.
+            When you have enough information to give a complete answer, call the `finish` tool
+            with your final answer. Do not guess — only call `finish` when you are confident.
             """;
 
-    private static final Pattern FINISH_PATTERN =
-            Pattern.compile("Action:\\s*Finish\\s*$", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
-    private static final Pattern THOUGHT_PATTERN =
-            Pattern.compile("Thought:\\s*(.+?)(?=\\nAction:|$)", Pattern.DOTALL);
+    /** Built-in finish tool — signals the end of the ReAct loop. */
+    private static final Tool FINISH_TOOL = new Tool() {
+        @Override public String name()        { return "finish"; }
+        @Override public String description() { return "Call this when you have a complete final answer."; }
+        @Override public ToolParameter parameters() {
+            return ToolParameter.of(ToolParameter.Param.required("answer", "Your complete final answer", "string"));
+        }
+        @Override public String execute(Map<String, String> params) {
+            return params.getOrDefault("answer", "");
+        }
+    };
 
-    private final String      agentName;
-    private final LlmClient   llm;
-    private final String      systemPrompt;  // optional context prepended before the ReAct prompt
-    private final String      customPrompt;  // replaces the default ReAct prompt when non-null
-    private final int         maxSteps;
+    private final String    agentName;
+    private final LlmClient llm;
+    private final String    systemPrompt;
+    private final int       maxSteps;
 
     // --- constructors --------------------------------------------------------
 
     public ReActAgent(LlmClient llm) {
-        this(DEFAULT_NAME, llm, null, null, DEFAULT_MAX_STEPS);
+        this(DEFAULT_NAME, llm, null, DEFAULT_MAX_STEPS);
     }
 
     public ReActAgent(LlmClient llm, int maxSteps) {
-        this(DEFAULT_NAME, llm, null, null, maxSteps);
+        this(DEFAULT_NAME, llm, null, maxSteps);
     }
 
-    public ReActAgent(String name, LlmClient llm, String systemPrompt, String customPrompt, int maxSteps) {
+    public ReActAgent(String name, LlmClient llm, String systemPrompt, int maxSteps) {
         this.agentName    = (name != null && !name.isBlank()) ? name : DEFAULT_NAME;
         this.llm          = llm;
-        this.systemPrompt = (systemPrompt != null && !systemPrompt.isBlank()) ? systemPrompt : null;
-        this.customPrompt = (customPrompt != null && !customPrompt.isBlank()) ? customPrompt : null;
+        this.systemPrompt = (systemPrompt != null && !systemPrompt.isBlank()) ? systemPrompt : DEFAULT_SYSTEM_PROMPT;
         this.maxSteps     = maxSteps > 0 ? maxSteps : DEFAULT_MAX_STEPS;
     }
 
@@ -97,30 +81,38 @@ public class ReActAgent extends AbstractAgent {
 
     @Override
     public String run(String task) {
-        List<Message> workingHistory = buildMessages(task);
+        List<Message> messages = buildMessages(task);
+        List<Tool>    allTools = buildTools();
 
         for (int step = 0; step < maxSteps; step++) {
-            String response = llm.chat(workingHistory);
-            workingHistory.add(Message.assistant(response));
+            LlmResponse resp = llm.chat(messages, allTools);
 
-            if (FINISH_PATTERN.matcher(response).find()) {
-                Matcher m = THOUGHT_PATTERN.matcher(response);
-                String answer = m.find() ? m.group(1).strip() : response;
+            if (!resp.hasToolCalls()) {
+                String answer = resp.content() != null ? resp.content() : "";
                 addMessage(Message.user(task));
                 addMessage(Message.assistant(answer));
                 return answer;
             }
 
-            List<ToolCall> toolCalls = hasTools() ? toolRegistry.parseToolCalls(response) : List.of();
-            if (!toolCalls.isEmpty()) {
-                for (ToolCall call : toolCalls) {
-                    String observation = toolRegistry.execute(call);
-                    workingHistory.add(Message.user("Observation: " + observation));
+            messages.add(Message.assistantWithToolCalls(resp.toolCalls()));
+
+            String finalAnswer = null;
+            for (FunctionCall call : resp.toolCalls()) {
+                if ("finish".equals(call.name())) {
+                    finalAnswer = call.parseArguments().getOrDefault("answer", "");
+                    messages.add(Message.tool(call.id(), finalAnswer));
+                } else {
+                    String result = hasTools()
+                            ? toolRegistry.execute(call.name(), call.parseArguments())
+                            : "Error: no tools registered.";
+                    messages.add(Message.tool(call.id(), result));
                 }
-            } else {
+            }
+
+            if (finalAnswer != null) {
                 addMessage(Message.user(task));
-                addMessage(Message.assistant(response));
-                return response;
+                addMessage(Message.assistant(finalAnswer));
+                return finalAnswer;
             }
         }
 
@@ -132,66 +124,64 @@ public class ReActAgent extends AbstractAgent {
 
     @Override
     public void stream(String task, Consumer<String> onToken) {
-        List<Message> workingHistory = buildMessages(task);
-        StringBuilder fullOutput = new StringBuilder();
+        List<Message> messages = buildMessages(task);
+        List<Tool>    allTools = buildTools();
 
         for (int step = 0; step < maxSteps; step++) {
-            StringBuilder buf = new StringBuilder();
-            llm.stream(workingHistory, token -> {
-                buf.append(token);
-                fullOutput.append(token);
-                onToken.accept(token);
-            });
-            String response = buf.toString();
-            workingHistory.add(Message.assistant(response));
+            // intermediate reasoning text is streamed; tool-call rounds produce no content
+            LlmResponse resp = llm.stream(messages, allTools, onToken);
 
-            if (FINISH_PATTERN.matcher(response).find()) {
+            if (!resp.hasToolCalls()) {
+                String answer = resp.content() != null ? resp.content() : "";
                 addMessage(Message.user(task));
-                addMessage(Message.assistant(fullOutput.toString()));
+                addMessage(Message.assistant(answer));
                 return;
             }
 
-            List<ToolCall> toolCalls = hasTools() ? toolRegistry.parseToolCalls(response) : List.of();
-            if (!toolCalls.isEmpty()) {
-                for (ToolCall call : toolCalls) {
-                    String observation = toolRegistry.execute(call);
-                    String observationLine = "\nObservation: " + observation + "\n";
-                    fullOutput.append(observationLine);
-                    onToken.accept(observationLine);
-                    workingHistory.add(Message.user("Observation: " + observation));
+            messages.add(Message.assistantWithToolCalls(resp.toolCalls()));
+
+            String finalAnswer = null;
+            for (FunctionCall call : resp.toolCalls()) {
+                if ("finish".equals(call.name())) {
+                    finalAnswer = call.parseArguments().getOrDefault("answer", "");
+                    messages.add(Message.tool(call.id(), finalAnswer));
+                } else {
+                    String result = hasTools()
+                            ? toolRegistry.execute(call.name(), call.parseArguments())
+                            : "Error: no tools registered.";
+                    onToken.accept("\n[" + call.name() + "] → " + result + "\n");
+                    messages.add(Message.tool(call.id(), result));
                 }
-            } else {
+            }
+
+            if (finalAnswer != null) {
+                onToken.accept("\nAnswer: " + finalAnswer);
                 addMessage(Message.user(task));
-                addMessage(Message.assistant(fullOutput.toString()));
+                addMessage(Message.assistant(finalAnswer));
                 return;
             }
         }
 
         String fallback = "\nMax steps reached without a final answer.";
-        fullOutput.append(fallback);
         onToken.accept(fallback);
         addMessage(Message.user(task));
-        addMessage(Message.assistant(fullOutput.toString()));
+        addMessage(Message.assistant(fallback));
     }
 
-    // --- internal ------------------------------------------------------------
+    // --- helpers -------------------------------------------------------------
 
     private List<Message> buildMessages(String task) {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.system(buildSystemPrompt()));
-        messages.addAll(getHistory());          // inject conversation history
+        messages.add(Message.system(systemPrompt));
+        messages.addAll(getHistory());
         messages.add(Message.user(task));
         return messages;
     }
 
-    private String buildSystemPrompt() {
-        String toolsDesc = hasTools() ? toolRegistry.describe() : "(none)";
-        String reactPrompt = customPrompt != null
-                ? (customPrompt.contains("%s") ? customPrompt.formatted(toolsDesc)
-                                               : customPrompt + "\n\nAvailable tools:\n" + toolsDesc)
-                : DEFAULT_REACT_PROMPT.formatted(toolsDesc);
-
-        return systemPrompt != null ? systemPrompt + "\n\n" + reactPrompt : reactPrompt;
+    private List<Tool> buildTools() {
+        List<Tool> tools = new ArrayList<>();
+        if (hasTools()) tools.addAll(toolRegistry.getTools());
+        tools.add(FINISH_TOOL);
+        return tools;
     }
-
 }

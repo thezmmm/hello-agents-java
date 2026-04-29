@@ -1,12 +1,12 @@
 package com.helloagents.tools;
 
-import java.util.ArrayList;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -14,9 +14,8 @@ import java.util.stream.Collectors;
  */
 public class ToolRegistry {
 
-    /** Matches {@code [TOOL_CALL:name:{...}]} or {@code [TOOL_CALL:name:plain]} in LLM output. */
-    private static final Pattern TOOL_CALL_PATTERN =
-            Pattern.compile("\\[TOOL_CALL:([^:]+):(\\{[^}]*\\}|[^]]+)]");
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final Map<String, Tool> tools = new LinkedHashMap<>();
 
@@ -26,15 +25,11 @@ public class ToolRegistry {
     }
 
     /**
-     * Registers a function as a tool without implementing the {@link Tool} interface.
-     *
-     * <pre>
-     *   registry.register("greet", "Greets the user by name", name -> "Hello, " + name + "!");
-     * </pre>
+     * Registers a lambda as a tool without implementing the {@link Tool} interface.
      *
      * @param name        unique tool name
      * @param description one-line description shown to the LLM
-     * @param fn          function that receives the raw input string and returns the result
+     * @param fn          function that receives parsed params and returns the result
      */
     public ToolRegistry register(String name, String description, Function<Map<String, String>, String> fn) {
         return register(new Tool() {
@@ -45,17 +40,11 @@ public class ToolRegistry {
     }
 
     /**
-     * Registers a function as a tool with explicit parameter metadata.
-     *
-     * <pre>
-     *   registry.register("greet", "Greets the user by name",
-     *           ToolParameter.of(Param.required("name", "Name to greet", "string")),
-     *           params -> "Hello, " + params.get("name") + "!");
-     * </pre>
+     * Registers a lambda as a tool with explicit parameter metadata.
      *
      * @param name        unique tool name
      * @param description one-line description shown to the LLM
-     * @param parameters  parameter schema for prompt injection
+     * @param parameters  parameter schema
      * @param fn          function that receives parsed params and returns the result
      */
     public ToolRegistry register(String name, String description,
@@ -83,20 +72,13 @@ public class ToolRegistry {
         return !tools.isEmpty();
     }
 
-    /** Dispatches a parsed {@link ToolCall} to the matching tool. */
-    public String execute(ToolCall call) {
-        return execute(call.toolName(), call.parsedParams());
+    /** Returns all registered tools in registration order. */
+    public List<Tool> getTools() {
+        return List.copyOf(tools.values());
     }
 
-    /**
-     * Convenience overload for direct invocation (e.g. tests and demos).
-     * {@code input} is parsed as a JSON object; pass {@code "{}"} or {@code ""} for no params.
-     */
-    public String execute(String toolName, String input) {
-        return execute(toolName, ToolCall.parse(input));
-    }
-
-    private String execute(String toolName, Map<String, String> params) {
+    /** Executes a tool by name with pre-parsed parameters. */
+    public String execute(String toolName, Map<String, String> params) {
         Tool tool = tools.get(toolName);
         if (tool == null) {
             return "Error: unknown tool '%s'. Available tools: %s"
@@ -110,20 +92,14 @@ public class ToolRegistry {
     }
 
     /**
-     * Finds all {@code [TOOL_CALL:name:{"param":"value"}]} markers in {@code text}
-     * and returns them as an ordered list of {@link ToolCall}s.
+     * Convenience overload: parses a JSON string then executes.
+     * Useful for tests and demos — pass {@code "{}"} or {@code ""} for no params.
      */
-    public List<ToolCall> parseToolCalls(String text) {
-        List<ToolCall> calls = new ArrayList<>();
-        if (text == null || text.isBlank()) return calls;
-        Matcher m = TOOL_CALL_PATTERN.matcher(text);
-        while (m.find()) {
-            calls.add(new ToolCall(m.group(1).strip(), m.group(2).strip(), m.group(0)));
-        }
-        return calls;
+    public String execute(String toolName, String jsonInput) {
+        return execute(toolName, parseJson(jsonInput));
     }
 
-    /** Returns a formatted list of tool names, descriptions, and parameters for the system prompt. */
+    /** Returns a formatted description of all tools for display purposes. */
     public String describe() {
         return tools.values().stream()
                 .map(t -> {
@@ -133,5 +109,19 @@ public class ToolRegistry {
                     return header + "\n" + params.describe();
                 })
                 .collect(Collectors.joining("\n"));
+    }
+
+    // -------------------------------------------------------------------------
+
+    private static Map<String, String> parseJson(String input) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (input == null || input.isBlank()) return result;
+        String trimmed = input.strip();
+        if (!trimmed.startsWith("{")) return result;
+        try {
+            Map<String, Object> raw = MAPPER.readValue(trimmed, MAP_TYPE);
+            raw.forEach((k, v) -> result.put(k.toLowerCase(), v == null ? "" : v.toString()));
+        } catch (Exception ignored) {}
+        return result;
     }
 }

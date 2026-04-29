@@ -87,7 +87,7 @@ public class ToolkitLoaderDemo {
         // ReActAgent 通过 addTool() 初始化内部 toolRegistry。
         // ToolkitLoaderTool 持有同一 registry 引用，加载时直接注册进去，
         // agent 下一步即可解析和执行新工具。
-        ReActAgent agent = new ReActAgent("DynamicAgent", llm, null, null, 10);
+        ReActAgent agent = new ReActAgent("DynamicAgent", llm, null, 10);
         agent.addTool(new CalculatorTool());
         agent.addTool(new ToolkitLoaderTool(agent.getToolRegistry())
                 .addAvailable("memory", MemoryToolkit::new));

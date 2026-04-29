@@ -1,8 +1,9 @@
 package com.helloagents.agents;
 
+import com.helloagents.llm.FunctionCall;
 import com.helloagents.llm.LlmClient;
+import com.helloagents.llm.LlmResponse;
 import com.helloagents.llm.Message;
-import com.helloagents.tools.ToolCall;
 import com.helloagents.tools.ToolRegistry;
 
 import java.util.ArrayList;
@@ -10,14 +11,11 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Executes a plan one step at a time.
+ * Executes a plan one step at a time using native function calling for tool invocation.
  *
  * <p>Each step gets one LLM call with the task, the current step description, and all previous
- * step results as context. Every step is handled identically — the last step's result is
- * returned directly as the final answer.
- *
- * <p>When a {@link ToolRegistry} is supplied, each step runs a tool-call loop (same
- * {@code [TOOL_CALL:name:params]} format as {@code SimpleAgent}) before moving to the next step.
+ * step results as context. When a {@link ToolRegistry} is supplied, each step may call tools
+ * via the native function calling protocol before producing its result.
  */
 public class Solver {
 
@@ -58,7 +56,7 @@ public class Solver {
     public String solve(String task, List<String> steps, ToolRegistry toolRegistry) {
         List<String> results = new ArrayList<>();
         for (int i = 0; i < steps.size(); i++) {
-            List<Message> messages = buildMessages(task, steps, i, results, toolRegistry);
+            List<Message> messages = buildMessages(task, steps, i, results);
             results.add(runStep(messages, toolRegistry));
         }
         return results.get(results.size() - 1);
@@ -68,7 +66,7 @@ public class Solver {
         List<String> results = new ArrayList<>();
         for (int i = 0; i < steps.size(); i++) {
             onToken.accept("Step " + (i + 1) + ": " + steps.get(i) + "\n");
-            List<Message> messages = buildMessages(task, steps, i, results, toolRegistry);
+            List<Message> messages = buildMessages(task, steps, i, results);
             results.add(streamStep(messages, toolRegistry, onToken));
             onToken.accept("\n");
         }
@@ -81,88 +79,62 @@ public class Solver {
 
         List<Message> history = new ArrayList<>(messages);
         for (int i = 0; i < DEFAULT_MAX_TOOL_ITERATIONS; i++) {
-            String response = llm.chat(history);
-            List<ToolCall> toolCalls = toolRegistry.parseToolCalls(response);
-            if (toolCalls.isEmpty()) return response;
-
-            history.add(Message.assistant(stripToolCalls(response, toolCalls)));
-            for (ToolCall call : toolCalls) {
-                history.add(Message.user("Observation: " + toolRegistry.execute(call)));
+            LlmResponse resp = llm.chat(history, toolRegistry.getTools());
+            if (!resp.hasToolCalls()) {
+                return resp.content() != null ? resp.content() : "";
+            }
+            history.add(Message.assistantWithToolCalls(resp.toolCalls()));
+            for (FunctionCall call : resp.toolCalls()) {
+                history.add(Message.tool(call.id(), toolRegistry.execute(call.name(), call.parseArguments())));
             }
         }
         return llm.chat(history);
     }
 
     private String streamStep(List<Message> messages, ToolRegistry toolRegistry, Consumer<String> onToken) {
+        if (!hasTools(toolRegistry)) {
+            StringBuilder buf = new StringBuilder();
+            llm.stream(messages, token -> { buf.append(token); onToken.accept(token); });
+            return buf.toString();
+        }
+
         List<Message> history = new ArrayList<>(messages);
         for (int i = 0; i < DEFAULT_MAX_TOOL_ITERATIONS; i++) {
-            StringBuilder buf = new StringBuilder();
-            llm.stream(history, token -> { buf.append(token); onToken.accept(token); });
-            String response = buf.toString();
-
-            if (!hasTools(toolRegistry)) return response;
-
-            List<ToolCall> toolCalls = toolRegistry.parseToolCalls(response);
-            if (toolCalls.isEmpty()) return response;
-
-            history.add(Message.assistant(stripToolCalls(response, toolCalls)));
-            for (ToolCall call : toolCalls) {
-                String observation = "Observation: " + toolRegistry.execute(call);
-                onToken.accept("\n" + observation + "\n");
-                history.add(Message.user(observation));
+            LlmResponse resp = llm.stream(history, toolRegistry.getTools(), onToken);
+            if (!resp.hasToolCalls()) {
+                return resp.content() != null ? resp.content() : "";
+            }
+            history.add(Message.assistantWithToolCalls(resp.toolCalls()));
+            for (FunctionCall call : resp.toolCalls()) {
+                String result = toolRegistry.execute(call.name(), call.parseArguments());
+                onToken.accept("\n[" + call.name() + "] → " + result + "\n");
+                history.add(Message.tool(call.id(), result));
             }
         }
-        StringBuilder buf = new StringBuilder();
-        llm.stream(history, token -> { buf.append(token); onToken.accept(token); });
-        return buf.toString();
+        LlmResponse resp = llm.stream(history, toolRegistry.getTools(), onToken);
+        return resp.content() != null ? resp.content() : "";
     }
 
     // --- message building ----------------------------------------------------
 
     private List<Message> buildMessages(String task, List<String> steps, int currentIndex,
-                                        List<String> prevResults, ToolRegistry toolRegistry) {
+                                        List<String> prevResults) {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.system(buildSystemPrompt(toolRegistry)));
-
-        // first user turn: the overall task
+        messages.add(Message.system(STEP_SYSTEM));
         messages.add(Message.user("Task: " + task));
 
-        // interleaved turns for each completed step
         for (int i = 0; i < prevResults.size(); i++) {
             messages.add(Message.user("Step " + (i + 1) + ": " + steps.get(i)));
             messages.add(Message.assistant(prevResults.get(i)));
         }
 
-        // current step as the latest user turn
         messages.add(Message.user("Step " + (currentIndex + 1) + ": " + steps.get(currentIndex)));
         return messages;
-    }
-
-    private String buildSystemPrompt(ToolRegistry toolRegistry) {
-        if (!hasTools(toolRegistry)) return STEP_SYSTEM;
-        return STEP_SYSTEM + """
-
-
-                ## Available Tools
-                """ + toolRegistry.describe() + """
-
-
-                ## Tool Call Format
-                When you need to use a tool, embed this exact tag in your response:
-                `[TOOL_CALL:tool_name:{"param":"value"}]`
-                Tool results will be provided automatically. You may then continue your answer.
-                """;
     }
 
     // --- helpers -------------------------------------------------------------
 
     private boolean hasTools(ToolRegistry toolRegistry) {
         return toolRegistry != null && toolRegistry.hasTools();
-    }
-
-    private String stripToolCalls(String response, List<ToolCall> toolCalls) {
-        String clean = response;
-        for (ToolCall call : toolCalls) clean = clean.replace(call.original(), "");
-        return clean.strip();
     }
 }

@@ -1,9 +1,10 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
+import com.helloagents.llm.FunctionCall;
 import com.helloagents.llm.LlmClient;
+import com.helloagents.llm.LlmResponse;
 import com.helloagents.llm.Message;
-import com.helloagents.tools.ToolCall;
 import com.helloagents.tools.ToolRegistry;
 
 import java.util.ArrayList;
@@ -16,10 +17,10 @@ import java.util.function.Consumer;
  * <p>Behaviour:
  * <ul>
  *   <li>Conversation history is automatically prepended to every call.</li>
- *   <li>When a {@link ToolRegistry} is provided, the system prompt is enhanced with tool
- *       descriptions and the agent enters a multi-iteration tool-call loop.</li>
- *   <li>Tool calls are expressed inline as {@code [TOOL_CALL:tool_name:parameters]};
- *       results are fed back as {@code tool} role messages.</li>
+ *   <li>When tools are registered, uses native function calling via
+ *       {@link LlmClient#chat(java.util.List, java.util.List)} — no text-parsing of tool markers.</li>
+ *   <li>Tool results are returned as {@code tool} role messages with matching
+ *       {@code tool_call_id}, as required by the OpenAI protocol.</li>
  * </ul>
  */
 public class SimpleAgent extends AbstractAgent {
@@ -44,9 +45,9 @@ public class SimpleAgent extends AbstractAgent {
     }
 
     public SimpleAgent(String name, LlmClient llm, String systemPrompt, ToolRegistry toolRegistry) {
-        this.agentName       = name;
-        this.llm             = llm;
-        this.systemPrompt    = systemPrompt != null ? systemPrompt : DEFAULT_SYSTEM_PROMPT;
+        this.agentName    = name;
+        this.llm          = llm;
+        this.systemPrompt = systemPrompt != null ? systemPrompt : DEFAULT_SYSTEM_PROMPT;
         this.toolRegistry = toolRegistry;
     }
 
@@ -62,12 +63,6 @@ public class SimpleAgent extends AbstractAgent {
         return run(task, DEFAULT_MAX_TOOL_ITERATIONS);
     }
 
-    /**
-     * Runs the agent with a configurable tool-iteration limit.
-     *
-     * @param task              natural-language task
-     * @param maxToolIterations maximum number of tool-call rounds before forcing a final answer
-     */
     public String run(String task, int maxToolIterations) {
         List<Message> messages = buildMessages(task);
 
@@ -101,144 +96,71 @@ public class SimpleAgent extends AbstractAgent {
             return;
         }
 
-        streamWithTools(messages, task, maxToolIterations, onToken);
+        doStream(messages, task, maxToolIterations, onToken);
     }
 
-    // --- tool-calling loop ---------------------------------------------------
-
-    private void streamWithTools(List<Message> messages, String task, int maxToolIterations,
-                                 Consumer<String> onToken) {
-        String finalResponse = "";
-
-        for (int iteration = 0; iteration < maxToolIterations; iteration++) {
-            StringBuilder buf = new StringBuilder();
-            llm.stream(messages, token -> {
-                buf.append(token);
-                onToken.accept(token);
-            });
-            String response = buf.toString();
-            List<ToolCall> toolCalls = extractToolCalls(response);
-
-            if (toolCalls.isEmpty()) {
-                finalResponse = response;
-                break;
-            }
-
-            // replace markers with readable placeholders so the LLM retains context
-            String cleanResponse = response;
-            for (ToolCall call : toolCalls) {
-                cleanResponse = cleanResponse.replace(call.original(), "[called " + call.toolName() + "]");
-            }
-            messages.add(Message.assistant(cleanResponse.strip()));
-
-            // execute tools, emit observations, feed back as user messages
-            for (ToolCall call : toolCalls) {
-                String result = executeToolCall(call);
-                String observation = "Observation: " + result;
-                onToken.accept("\n" + observation + "\n");
-                messages.add(Message.user(observation));
-            }
-        }
-
-        if (finalResponse.isEmpty()) {
-            StringBuilder buf = new StringBuilder();
-            llm.stream(messages, token -> {
-                buf.append(token);
-                onToken.accept(token);
-            });
-            finalResponse = buf.toString();
-        }
-
-        addMessage(Message.user(task));
-        addMessage(Message.assistant(finalResponse));
-    }
+    // --- tool-calling loop (native function calling) -------------------------
 
     private String runWithTools(List<Message> messages, String task, int maxToolIterations) {
-        String finalResponse = "";
+        for (int i = 0; i < maxToolIterations; i++) {
+            LlmResponse resp = llm.chat(messages, toolRegistry.getTools());
 
-        for (int iteration = 0; iteration < maxToolIterations; iteration++) {
-            String response = llm.chat(messages);
-            List<ToolCall> toolCalls = extractToolCalls(response);
-
-            if (toolCalls.isEmpty()) {
-                finalResponse = response;
-                break;
+            if (!resp.hasToolCalls()) {
+                String answer = resp.content() != null ? resp.content() : "";
+                addMessage(Message.user(task));
+                addMessage(Message.assistant(answer));
+                return answer;
             }
 
-            String cleanResponse = response;
-            for (ToolCall call : toolCalls) {
-                cleanResponse = cleanResponse.replace(call.original(), "[called " + call.toolName() + "]");
-            }
-            messages.add(Message.assistant(cleanResponse.strip()));
-            for (ToolCall call : toolCalls) {
-                messages.add(Message.user("Observation: " + executeToolCall(call)));
+            messages.add(Message.assistantWithToolCalls(resp.toolCalls()));
+            for (FunctionCall call : resp.toolCalls()) {
+                String result = toolRegistry.execute(call.name(), call.parseArguments());
+                messages.add(Message.tool(call.id(), result));
             }
         }
 
-        // if iterations exhausted without a clean answer, ask for one final reply
-        if (finalResponse.isEmpty()) {
-            finalResponse = llm.chat(messages);
-        }
-
+        // iterations exhausted — ask for a final answer without tools
+        String answer = llm.chat(messages);
         addMessage(Message.user(task));
-        addMessage(Message.assistant(finalResponse));
-        return finalResponse;
+        addMessage(Message.assistant(answer));
+        return answer;
+    }
+
+    private void doStream(List<Message> messages, String task, int maxToolIterations,
+                                 Consumer<String> onToken) {
+        for (int i = 0; i < maxToolIterations; i++) {
+            // stream(tools) emits content tokens for final answers, silent for tool-call rounds
+            LlmResponse resp = llm.stream(messages, toolRegistry.getTools(), onToken);
+
+            if (!resp.hasToolCalls()) {
+                String answer = resp.content() != null ? resp.content() : "";
+                addMessage(Message.user(task));
+                addMessage(Message.assistant(answer));
+                return;
+            }
+
+            messages.add(Message.assistantWithToolCalls(resp.toolCalls()));
+            for (FunctionCall call : resp.toolCalls()) {
+                String result = toolRegistry.execute(call.name(), call.parseArguments());
+                onToken.accept("\n[" + call.name() + "] → " + result + "\n");
+                messages.add(Message.tool(call.id(), result));
+            }
+        }
+
+        // iterations exhausted — stream one final answer
+        LlmResponse resp = llm.stream(messages, toolRegistry.getTools(), onToken);
+        String answer = resp.content() != null ? resp.content() : "";
+        addMessage(Message.user(task));
+        addMessage(Message.assistant(answer));
     }
 
     // --- message building ----------------------------------------------------
 
     private List<Message> buildMessages(String task) {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.system(buildSystemPrompt()));
-        messages.addAll(getHistory());          // inject conversation history
+        messages.add(Message.system(systemPrompt));
+        messages.addAll(getHistory());
         messages.add(Message.user(task));
         return messages;
     }
-
-    private String buildSystemPrompt() {
-        if (!hasTools()) return systemPrompt;
-
-        String toolsDesc = toolRegistry.describe();
-        if (toolsDesc.isBlank()) return systemPrompt;
-
-        return systemPrompt + """
-
-
-                ## Available Tools
-                You can use the following tools to help answer questions:
-                """ + toolsDesc + """
-
-
-                ## Tool Call Format
-                When you need to use a tool, embed this exact tag in your response:
-                `[TOOL_CALL:tool_name:{"param":"value"}]`
-                Tool results will be provided automatically. You may then continue your answer.
-                """;
-    }
-
-    // --- tool-call parsing ---------------------------------------------------
-
-    /**
-     * Extracts all {@code [TOOL_CALL:name:params]} markers from the LLM response.
-     *
-     * @param response raw LLM response
-     * @return ordered list of parsed tool calls; empty if none found
-     */
-    private List<ToolCall> extractToolCalls(String response) {
-        return toolRegistry.parseToolCalls(response);
-    }
-
-    // --- tool-call execution -------------------------------------------------
-
-    /**
-     * Executes a single tool call via the registry and returns the result string.
-     *
-     * @param call the tool call to execute
-     * @return tool output, or an error message if the registry is unavailable
-     */
-    protected String executeToolCall(ToolCall call) {
-        if (toolRegistry == null) return "Error: no tool registry configured.";
-        return toolRegistry.execute(call);
-    }
-
 }

@@ -1,5 +1,7 @@
 package com.helloagents.llm;
 
+import com.helloagents.tools.Tool;
+
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -45,6 +47,44 @@ public interface LlmClient {
     /** Convenience overload for a single user message. */
     default void stream(String userMessage, Consumer<String> onToken) {
         stream(List.of(Message.user(userMessage)), onToken);
+    }
+
+    /**
+     * Send messages with tool definitions and return a structured response (blocking).
+     * The response contains either a text reply or a list of tool calls to execute.
+     *
+     * @param messages conversation history
+     * @param tools    tools available to the model
+     * @return {@link LlmResponse} with {@code content} or {@code toolCalls}
+     */
+    default LlmResponse chat(List<Message> messages, List<Tool> tools) {
+        throw new UnsupportedOperationException(
+                "Native function calling not supported by this LlmClient implementation");
+    }
+
+    /**
+     * Send messages with tool definitions and stream content tokens as they arrive.
+     *
+     * <p>Behaviour by finish reason:
+     * <ul>
+     *   <li>{@code stop} — content tokens are emitted to {@code onToken} in real time.</li>
+     *   <li>{@code tool_calls} — no content tokens; {@code onToken} is not called.</li>
+     * </ul>
+     *
+     * <p>The default implementation falls back to the blocking {@link #chat(List, List)} and
+     * emits the content (if any) as a single token.
+     *
+     * @param messages conversation history
+     * @param tools    tools available to the model
+     * @param onToken  callback invoked for each content token as it arrives
+     * @return structured response describing the final state
+     */
+    default LlmResponse stream(List<Message> messages, List<Tool> tools, Consumer<String> onToken) {
+        LlmResponse resp = chat(messages, tools);
+        if (!resp.hasToolCalls() && resp.content() != null) {
+            onToken.accept(resp.content());
+        }
+        return resp;
     }
 
     /**

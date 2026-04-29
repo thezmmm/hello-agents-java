@@ -25,8 +25,8 @@ public interface Tool {
 
     /**
      * Execute the tool with pre-parsed parameters.
-     * Parameters are already extracted from the JSON in the LLM response by
-     * {@link ToolRegistry#parseToolCalls}; implementations just call {@code params.get("key")}.
+     * Parameters are extracted from the native function call's JSON arguments by
+     * {@link com.helloagents.llm.FunctionCall#parseArguments}; implementations just call {@code params.get("key")}.
      *
      * @param params key→value map parsed from the tool call's JSON parameter block
      * @return result string fed back to the LLM as an Observation

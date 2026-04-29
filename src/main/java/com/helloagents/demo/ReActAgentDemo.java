@@ -15,7 +15,7 @@ public class ReActAgentDemo {
 
     public static void main(String[] args) {
         var llm = OpenAiClient.fromEnv();
-        var agent = new ReActAgent("MathAgent", llm, null, null, 5);
+        var agent = new ReActAgent("MathAgent", llm, null, 5);
         agent.addTool(new CalculatorTool());
 
         String task = "If a rectangle has width 7 and height 5, what is its area? Then multiply that by 3.";

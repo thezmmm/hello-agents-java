@@ -1,12 +1,10 @@
 package com.helloagents.agents;
 
 import com.helloagents.core.AbstractAgent;
-import com.helloagents.core.ToolSupport;
+import com.helloagents.llm.FunctionCall;
 import com.helloagents.llm.LlmClient;
+import com.helloagents.llm.LlmResponse;
 import com.helloagents.llm.Message;
-import com.helloagents.tools.Tool;
-import com.helloagents.tools.ToolCall;
-import com.helloagents.tools.ToolRegistry;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,21 +15,18 @@ import java.util.function.Consumer;
  *
  * <p>Pattern:
  * <ol>
- *   <li>Generate — produce an initial answer (tool calls supported here)</li>
+ *   <li>Generate — produce an initial answer (native function calling for tools)</li>
  *   <li>Reflect  — critique the answer for accuracy, completeness, and clarity</li>
  *   <li>Refine   — produce an improved answer based on the critique</li>
  * </ol>
  *
  * <p>Construction:
  * <pre>
- *   // minimal
  *   new ReflectionAgent(llm)
- *
- *   // with custom name and generate prompt
  *   new ReflectionAgent("MyAgent", llm, systemPrompt)
  * </pre>
  */
-public class ReflectionAgent extends AbstractAgent implements ToolSupport {
+public class ReflectionAgent extends AbstractAgent {
 
     private static final String DEFAULT_NAME = "ReflectionAgent";
     private static final int    DEFAULT_MAX_TOOL_ITERATIONS = 3;
@@ -56,8 +51,7 @@ public class ReflectionAgent extends AbstractAgent implements ToolSupport {
 
     private final String    agentName;
     private final LlmClient llm;
-    private final String    systemPrompt;  // overrides DEFAULT_GENERATE_SYSTEM when set
-    private ToolRegistry    toolRegistry;  // lazily initialised on first addTool()
+    private final String    systemPrompt;
 
     // --- constructors --------------------------------------------------------
 
@@ -103,11 +97,10 @@ public class ReflectionAgent extends AbstractAgent implements ToolSupport {
                     critiqueBuf.append(token);
                     onToken.accept(token);
                 });
-        String critique = critiqueBuf.toString();
 
         onToken.accept("\n\nFinal Answer: \n");
         StringBuilder refineBuf = new StringBuilder();
-        llm.stream(refineMessages(task, draft, critique), token -> {
+        llm.stream(refineMessages(task, draft, critiqueBuf.toString()), token -> {
             refineBuf.append(token);
             onToken.accept(token);
         });
@@ -116,12 +109,31 @@ public class ReflectionAgent extends AbstractAgent implements ToolSupport {
         addMessage(Message.assistant(refineBuf.toString()));
     }
 
-    // --- internal ------------------------------------------------------------
+    // --- generate phase (with native function calling if tools registered) ---
+
+    private String generate(String task) {
+        List<Message> messages = List.of(Message.system(systemPrompt), Message.user(task));
+
+        if (!hasTools()) {
+            return llm.chat(messages);
+        }
+
+        List<Message> history = new ArrayList<>(messages);
+        for (int i = 0; i < DEFAULT_MAX_TOOL_ITERATIONS; i++) {
+            LlmResponse resp = llm.chat(history, toolRegistry.getTools());
+            if (!resp.hasToolCalls()) {
+                return resp.content() != null ? resp.content() : "";
+            }
+            history.add(Message.assistantWithToolCalls(resp.toolCalls()));
+            for (FunctionCall call : resp.toolCalls()) {
+                history.add(Message.tool(call.id(), toolRegistry.execute(call.name(), call.parseArguments())));
+            }
+        }
+        return llm.chat(history);
+    }
 
     private String streamGenerate(String task, Consumer<String> onToken) {
-        List<Message> messages = new ArrayList<>();
-        messages.add(Message.system(buildGeneratePrompt()));
-        messages.add(Message.user(task));
+        List<Message> messages = List.of(Message.system(systemPrompt), Message.user(task));
 
         if (!hasTools()) {
             StringBuilder buf = new StringBuilder();
@@ -129,48 +141,24 @@ public class ReflectionAgent extends AbstractAgent implements ToolSupport {
             return buf.toString();
         }
 
+        List<Message> history = new ArrayList<>(messages);
         for (int i = 0; i < DEFAULT_MAX_TOOL_ITERATIONS; i++) {
-            StringBuilder buf = new StringBuilder();
-            llm.stream(messages, token -> { buf.append(token); onToken.accept(token); });
-            String response = buf.toString();
-            List<ToolCall> toolCalls = toolRegistry.parseToolCalls(response);
-            if (toolCalls.isEmpty()) return response;
-
-            String clean = stripToolCalls(response, toolCalls);
-            messages.add(Message.assistant(clean));
-            for (ToolCall call : toolCalls) {
-                String observation = "Observation: " + toolRegistry.execute(call);
-                onToken.accept("\n" + observation + "\n");
-                messages.add(Message.user(observation));
+            LlmResponse resp = llm.stream(history, toolRegistry.getTools(), onToken);
+            if (!resp.hasToolCalls()) {
+                return resp.content() != null ? resp.content() : "";
+            }
+            history.add(Message.assistantWithToolCalls(resp.toolCalls()));
+            for (FunctionCall call : resp.toolCalls()) {
+                String result = toolRegistry.execute(call.name(), call.parseArguments());
+                onToken.accept("\n[" + call.name() + "] → " + result + "\n");
+                history.add(Message.tool(call.id(), result));
             }
         }
-        StringBuilder buf = new StringBuilder();
-        llm.stream(messages, token -> { buf.append(token); onToken.accept(token); });
-        return buf.toString();
+        LlmResponse resp = llm.stream(history, toolRegistry.getTools(), onToken);
+        return resp.content() != null ? resp.content() : "";
     }
 
-    private String generate(String task) {
-        List<Message> messages = new ArrayList<>();
-        messages.add(Message.system(buildGeneratePrompt()));
-        messages.add(Message.user(task));
-
-        if (!hasTools()) {
-            return llm.chat(messages);
-        }
-
-        for (int i = 0; i < DEFAULT_MAX_TOOL_ITERATIONS; i++) {
-            String response = llm.chat(messages);
-            List<ToolCall> toolCalls = toolRegistry.parseToolCalls(response);
-            if (toolCalls.isEmpty()) return response;
-
-            String clean = stripToolCalls(response, toolCalls);
-            messages.add(Message.assistant(clean));
-            for (ToolCall call : toolCalls) {
-                messages.add(Message.user("Observation: " + toolRegistry.execute(call)));
-            }
-        }
-        return llm.chat(messages);
-    }
+    // --- reflect / refine (no tools) ----------------------------------------
 
     private String reflect(String task, String draft) {
         return llm.chat(List.of(
@@ -190,47 +178,5 @@ public class ReflectionAgent extends AbstractAgent implements ToolSupport {
                         Critique:
                         %s
                         """.formatted(task, draft, critique)));
-    }
-
-    private String buildGeneratePrompt() {
-        if (!hasTools()) return systemPrompt;
-        return systemPrompt + """
-
-
-                ## Available Tools
-                You can use the following tools to help answer questions:
-                """ + toolRegistry.describe() + """
-
-
-                ## Tool Call Format
-                When you need to use a tool, embed this exact tag in your response:
-                `[TOOL_CALL:tool_name:{"param":"value"}]`
-                Tool results will be provided automatically. You may then continue your answer.
-                """;
-    }
-
-    private String stripToolCalls(String response, List<ToolCall> toolCalls) {
-        String clean = response;
-        for (ToolCall call : toolCalls) clean = clean.replace(call.original(), "");
-        return clean.strip();
-    }
-
-    // --- tool management -----------------------------------------------------
-
-    public void addTool(Tool tool) {
-        if (toolRegistry == null) toolRegistry = new ToolRegistry();
-        toolRegistry.register(tool);
-    }
-
-    public boolean hasTools() {
-        return toolRegistry != null && toolRegistry.hasTools();
-    }
-
-    public boolean removeTool(String toolName) {
-        return toolRegistry != null && toolRegistry.unregister(toolName);
-    }
-
-    public List<String> listTools() {
-        return toolRegistry == null ? List.of() : toolRegistry.list();
     }
 }

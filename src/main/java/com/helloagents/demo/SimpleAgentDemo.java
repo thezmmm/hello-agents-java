@@ -26,7 +26,7 @@ public class SimpleAgentDemo {
 
 //        demoBasic(llm);
 //        demoHistory(llm);
-//        demoToolCalling(llm);
+        demoToolCalling(llm);
         demoFunctionRegistration(llm);
     }
 
@@ -57,7 +57,7 @@ public class SimpleAgentDemo {
         System.out.println("History size: " + agent.getHistory().size() + " messages\n");
     }
 
-    /** Scenario 3: agent equipped with CalculatorTool, triggered via [TOOL_CALL:...]. */
+    /** Scenario 3: agent equipped with CalculatorTool using native function calling. */
     private static void demoToolCalling(OpenAiClient llm) {
         printHeader("3. Tool Calling (Calculator)");
         var agent = new SimpleAgent("MathAgent", llm, null, null);
