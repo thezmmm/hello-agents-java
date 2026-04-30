@@ -16,16 +16,10 @@ import java.util.function.Consumer;
 /**
  * ReAct (Reasoning + Acting) agent using native function calling.
  *
- * <p>Each iteration the model may call any registered tool to gather information.
- * When it has a final answer it calls the built-in {@code finish} tool, ending the loop.
- * The model's reasoning appears in the {@code content} field; tool calls appear in the
- * structured {@code tool_calls} field — no text parsing required.
- *
- * <p>Construction:
- * <pre>
- *   new ReActAgent(llm)
- *   new ReActAgent("MyAgent", llm, systemPrompt, maxSteps)
- * </pre>
+ * <p>Each iteration the model may call any registered tool. When it has a final
+ * answer it calls the built-in {@code finish} tool, ending the loop.
+ * The model's reasoning appears in the {@code content} field; tool calls appear
+ * in the structured {@code tool_calls} field — no text parsing required.
  */
 public class ReActAgent extends AbstractAgent {
 
@@ -38,7 +32,6 @@ public class ReActAgent extends AbstractAgent {
             with your final answer. Do not guess — only call `finish` when you are confident.
             """;
 
-    /** Built-in finish tool — signals the end of the ReAct loop. */
     private static final Tool FINISH_TOOL = new Tool() {
         @Override public String name()        { return "finish"; }
         @Override public String description() { return "Call this when you have a complete final answer."; }
@@ -73,107 +66,139 @@ public class ReActAgent extends AbstractAgent {
     }
 
     @Override
-    public String name() {
-        return agentName;
-    }
+    public String name() { return agentName; }
 
-    // --- run / stream --------------------------------------------------------
+    // --- run -----------------------------------------------------------------
 
     @Override
     public String run(String task) {
         List<Message> messages = buildMessages(task);
         List<Tool>    allTools = buildTools();
+        List<Message> trace    = new ArrayList<>();
+        trace.add(Message.user(task));
 
         for (int step = 0; step < maxSteps; step++) {
             LlmResponse resp = llm.chat(messages, allTools);
 
             if (!resp.hasToolCalls()) {
                 String answer = resp.content() != null ? resp.content() : "";
+                trace.add(Message.assistant(answer));
                 addMessage(Message.user(task));
                 addMessage(Message.assistant(answer));
+                addExecutionTrace(trace);
                 return answer;
             }
 
-            messages.add(Message.assistantWithToolCalls(resp.toolCalls()));
-
-            String finalAnswer = null;
-            for (FunctionCall call : resp.toolCalls()) {
-                if ("finish".equals(call.name())) {
-                    finalAnswer = call.parseArguments().getOrDefault("answer", "");
-                    messages.add(Message.tool(call.id(), finalAnswer));
-                } else {
-                    String result = hasTools()
-                            ? toolRegistry.execute(call.name(), call.parseArguments())
-                            : "Error: no tools registered.";
-                    messages.add(Message.tool(call.id(), result));
-                }
-            }
-
+            String finalAnswer = appendToolExchange(messages, trace, resp, null);
             if (finalAnswer != null) {
+                trace.add(Message.assistant(finalAnswer));
                 addMessage(Message.user(task));
                 addMessage(Message.assistant(finalAnswer));
+                addExecutionTrace(trace);
                 return finalAnswer;
             }
         }
 
         String fallback = "Max steps reached without a final answer.";
+        trace.add(Message.assistant(fallback));
         addMessage(Message.user(task));
         addMessage(Message.assistant(fallback));
+        addExecutionTrace(trace);
         return fallback;
     }
+
+    // --- stream --------------------------------------------------------------
 
     @Override
     public void stream(String task, Consumer<String> onToken) {
         List<Message> messages = buildMessages(task);
         List<Tool>    allTools = buildTools();
+        List<Message> trace    = new ArrayList<>();
+        trace.add(Message.user(task));
 
         for (int step = 0; step < maxSteps; step++) {
-            // intermediate reasoning text is streamed; tool-call rounds produce no content
             LlmResponse resp = llm.stream(messages, allTools, onToken);
 
             if (!resp.hasToolCalls()) {
                 String answer = resp.content() != null ? resp.content() : "";
+                trace.add(Message.assistant(answer));
                 addMessage(Message.user(task));
                 addMessage(Message.assistant(answer));
+                addExecutionTrace(trace);
                 return;
             }
 
-            messages.add(Message.assistantWithToolCalls(resp.toolCalls()));
-
-            String finalAnswer = null;
-            for (FunctionCall call : resp.toolCalls()) {
-                if ("finish".equals(call.name())) {
-                    finalAnswer = call.parseArguments().getOrDefault("answer", "");
-                    messages.add(Message.tool(call.id(), finalAnswer));
-                } else {
-                    String result = hasTools()
-                            ? toolRegistry.execute(call.name(), call.parseArguments())
-                            : "Error: no tools registered.";
-                    onToken.accept("\n[" + call.name() + "] → " + result + "\n");
-                    messages.add(Message.tool(call.id(), result));
-                }
-            }
-
+            String finalAnswer = appendToolExchange(messages, trace, resp, onToken);
             if (finalAnswer != null) {
                 onToken.accept("\nAnswer: " + finalAnswer);
+                trace.add(Message.assistant(finalAnswer));
                 addMessage(Message.user(task));
                 addMessage(Message.assistant(finalAnswer));
+                addExecutionTrace(trace);
                 return;
             }
         }
 
-        String fallback = "\nMax steps reached without a final answer.";
-        onToken.accept(fallback);
+        String fallback = "Max steps reached without a final answer.";
+        onToken.accept("\n" + fallback);
+        trace.add(Message.assistant(fallback));
         addMessage(Message.user(task));
         addMessage(Message.assistant(fallback));
+        addExecutionTrace(trace);
     }
 
     // --- helpers -------------------------------------------------------------
 
+    /**
+     * Processes all tool calls in {@code resp}, appending the exchange to
+     * {@code messages} and {@code trace}. Returns the final answer if the
+     * {@code finish} tool was called, or {@code null} to continue the loop.
+     */
+    private String appendToolExchange(List<Message> messages, List<Message> trace,
+                                      LlmResponse resp, Consumer<String> onToken) {
+        Message toolCallMsg = Message.assistantWithToolCalls(resp.toolCalls());
+        messages.add(toolCallMsg);
+        trace.add(toolCallMsg);
+
+        String finalAnswer = null;
+        for (FunctionCall call : resp.toolCalls()) {
+            String result;
+            if ("finish".equals(call.name())) {
+                finalAnswer = call.parseArguments().getOrDefault("answer", "");
+                result = finalAnswer;
+            } else {
+                result = hasTools()
+                        ? toolRegistry.execute(call.name(), call.parseArguments())
+                        : "Error: no tools registered.";
+                if (onToken != null) onToken.accept("\n[" + call.name() + "] → " + result + "\n");
+            }
+            Message toolResultMsg = Message.tool(call.id(), result);
+            messages.add(toolResultMsg);
+            trace.add(toolResultMsg);
+        }
+        return finalAnswer;
+    }
+
     private List<Message> buildMessages(String task) {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.system(systemPrompt));
-        messages.addAll(getHistory());
+
+        String baseSystem = systemPromptBuilder != null
+                ? systemPromptBuilder.build(task, systemPrompt)
+                : systemPrompt;
+
+        if (compressedHistory != null) {
+            compressedHistory.sync(getHistory());
+            String summary = compressedHistory.getSummary();
+            String system  = summary != null
+                    ? baseSystem + "\n\nConversation summary:\n" + summary
+                    : baseSystem;
+            messages.add(Message.system(system));
+            messages.addAll(compressedHistory.getRecentMessages());
+        } else {
+            messages.add(Message.system(baseSystem));
+            messages.addAll(getHistory());
+        }
+
         messages.add(Message.user(task));
         return messages;
     }
