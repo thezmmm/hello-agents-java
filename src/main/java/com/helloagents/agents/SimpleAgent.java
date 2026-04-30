@@ -14,25 +14,19 @@ import java.util.function.Consumer;
 /**
  * A general-purpose conversational agent with optional tool-calling support.
  *
- * <p>Behaviour:
- * <ul>
- *   <li>Conversation history is automatically prepended to every call.</li>
- *   <li>When tools are registered, uses native function calling via
- *       {@link LlmClient#chat(java.util.List, java.util.List)} — no text-parsing of tool markers.</li>
- *   <li>Tool results are returned as {@code tool} role messages with matching
- *       {@code tool_call_id}, as required by the OpenAI protocol.</li>
- * </ul>
+ * <p>Both {@link #run} and {@link #stream} are overloaded to accept an optional
+ * {@code maxToolIterations} argument. Tool calling is handled by private loop
+ * methods, one per interaction mode.
  */
 public class SimpleAgent extends AbstractAgent {
 
     private static final String DEFAULT_SYSTEM_PROMPT =
             "You are a helpful assistant. Answer the user's question concisely and accurately.";
-
     private static final int DEFAULT_MAX_TOOL_ITERATIONS = 3;
 
-    private final String agentName;
+    private final String    agentName;
     private final LlmClient llm;
-    private final String systemPrompt;
+    private final String    systemPrompt;
 
     // --- constructors --------------------------------------------------------
 
@@ -52,11 +46,9 @@ public class SimpleAgent extends AbstractAgent {
     }
 
     @Override
-    public String name() {
-        return agentName;
-    }
+    public String name() { return agentName; }
 
-    // --- BaseAgent -----------------------------------------------------------
+    // --- run -----------------------------------------------------------------
 
     @Override
     public String run(String task) {
@@ -65,17 +57,24 @@ public class SimpleAgent extends AbstractAgent {
 
     public String run(String task, int maxToolIterations) {
         List<Message> messages = buildMessages(task);
+        List<Message> trace    = new ArrayList<>();
+        trace.add(Message.user(task));
 
-        String response;
+        String answer;
         if (hasTools()) {
-            response = runWithTools(messages, task, maxToolIterations);
+            answer = runToolLoop(messages, task, maxToolIterations, trace);
         } else {
-            response = llm.chat(messages);
+            answer = llm.chat(messages);
+            trace.add(Message.assistant(answer));
             addMessage(Message.user(task));
-            addMessage(Message.assistant(response));
+            addMessage(Message.assistant(answer));
         }
-        return response;
+
+        addExecutionTrace(trace);
+        return answer;
     }
+
+    // --- stream --------------------------------------------------------------
 
     @Override
     public void stream(String task, Consumer<String> onToken) {
@@ -84,82 +83,115 @@ public class SimpleAgent extends AbstractAgent {
 
     public void stream(String task, int maxToolIterations, Consumer<String> onToken) {
         List<Message> messages = buildMessages(task);
+        List<Message> trace    = new ArrayList<>();
+        trace.add(Message.user(task));
 
-        if (!hasTools()) {
+        if (hasTools()) {
+            streamToolLoop(messages, task, maxToolIterations, trace, onToken);
+        } else {
             StringBuilder buf = new StringBuilder();
-            llm.stream(messages, token -> {
-                buf.append(token);
-                onToken.accept(token);
-            });
+            llm.stream(messages, token -> { buf.append(token); onToken.accept(token); });
+            String answer = buf.toString();
+            trace.add(Message.assistant(answer));
             addMessage(Message.user(task));
-            addMessage(Message.assistant(buf.toString()));
-            return;
+            addMessage(Message.assistant(answer));
         }
 
-        doStream(messages, task, maxToolIterations, onToken);
+        addExecutionTrace(trace);
     }
 
-    // --- tool-calling loop (native function calling) -------------------------
+    // --- tool loops ----------------------------------------------------------
 
-    private String runWithTools(List<Message> messages, String task, int maxToolIterations) {
+    private String runToolLoop(List<Message> messages, String task,
+                               int maxToolIterations, List<Message> trace) {
         for (int i = 0; i < maxToolIterations; i++) {
             LlmResponse resp = llm.chat(messages, toolRegistry.getTools());
 
             if (!resp.hasToolCalls()) {
                 String answer = resp.content() != null ? resp.content() : "";
+                trace.add(Message.assistant(answer));
                 addMessage(Message.user(task));
                 addMessage(Message.assistant(answer));
                 return answer;
             }
 
-            messages.add(Message.assistantWithToolCalls(resp.toolCalls()));
-            for (FunctionCall call : resp.toolCalls()) {
-                String result = toolRegistry.execute(call.name(), call.parseArguments());
-                messages.add(Message.tool(call.id(), result));
-            }
+            appendToolExchange(messages, trace, resp, null);
         }
 
-        // iterations exhausted — ask for a final answer without tools
+        // iterations exhausted — final answer without tools
         String answer = llm.chat(messages);
+        trace.add(Message.assistant(answer));
         addMessage(Message.user(task));
         addMessage(Message.assistant(answer));
         return answer;
     }
 
-    private void doStream(List<Message> messages, String task, int maxToolIterations,
-                                 Consumer<String> onToken) {
+    private void streamToolLoop(List<Message> messages, String task,
+                                int maxToolIterations, List<Message> trace,
+                                Consumer<String> onToken) {
         for (int i = 0; i < maxToolIterations; i++) {
-            // stream(tools) emits content tokens for final answers, silent for tool-call rounds
             LlmResponse resp = llm.stream(messages, toolRegistry.getTools(), onToken);
 
             if (!resp.hasToolCalls()) {
                 String answer = resp.content() != null ? resp.content() : "";
+                trace.add(Message.assistant(answer));
                 addMessage(Message.user(task));
                 addMessage(Message.assistant(answer));
                 return;
             }
 
-            messages.add(Message.assistantWithToolCalls(resp.toolCalls()));
-            for (FunctionCall call : resp.toolCalls()) {
-                String result = toolRegistry.execute(call.name(), call.parseArguments());
-                onToken.accept("\n[" + call.name() + "] → " + result + "\n");
-                messages.add(Message.tool(call.id(), result));
-            }
+            appendToolExchange(messages, trace, resp, onToken);
         }
 
-        // iterations exhausted — stream one final answer
-        LlmResponse resp = llm.stream(messages, toolRegistry.getTools(), onToken);
-        String answer = resp.content() != null ? resp.content() : "";
+        // iterations exhausted — stream final answer without tools
+        StringBuilder buf = new StringBuilder();
+        llm.stream(messages, token -> { buf.append(token); onToken.accept(token); });
+        String answer = buf.toString();
+        trace.add(Message.assistant(answer));
         addMessage(Message.user(task));
         addMessage(Message.assistant(answer));
+    }
+
+    /**
+     * Executes all tool calls in {@code resp}, appending the exchange to
+     * {@code messages} and {@code trace}. Notifies {@code onToken} if non-null.
+     */
+    private void appendToolExchange(List<Message> messages, List<Message> trace,
+                                    LlmResponse resp, Consumer<String> onToken) {
+        Message toolCallMsg = Message.assistantWithToolCalls(resp.toolCalls());
+        messages.add(toolCallMsg);
+        trace.add(toolCallMsg);
+        for (FunctionCall call : resp.toolCalls()) {
+            String  result        = toolRegistry.execute(call.name(), call.parseArguments());
+            Message toolResultMsg = Message.tool(call.id(), result);
+            messages.add(toolResultMsg);
+            trace.add(toolResultMsg);
+            if (onToken != null) onToken.accept("\n[" + call.name() + "] → " + result + "\n");
+        }
     }
 
     // --- message building ----------------------------------------------------
 
     private List<Message> buildMessages(String task) {
         List<Message> messages = new ArrayList<>();
-        messages.add(Message.system(systemPrompt));
-        messages.addAll(getHistory());
+
+        String baseSystem = systemPromptBuilder != null
+                ? systemPromptBuilder.build(task, systemPrompt)
+                : systemPrompt;
+
+        if (compressedHistory != null) {
+            compressedHistory.sync(getHistory());
+            String summary = compressedHistory.getSummary();
+            String system  = summary != null
+                    ? baseSystem + "\n\nConversation summary:\n" + summary
+                    : baseSystem;
+            messages.add(Message.system(system));
+            messages.addAll(compressedHistory.getRecentMessages());
+        } else {
+            messages.add(Message.system(baseSystem));
+            messages.addAll(getHistory());
+        }
+
         messages.add(Message.user(task));
         return messages;
     }
