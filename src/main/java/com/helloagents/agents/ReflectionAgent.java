@@ -11,24 +11,15 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Reflection agent: generates an initial response and then critiques + refines it.
+ * Reflection agent: Generate → Reflect → Refine.
  *
- * <p>Pattern:
- * <ol>
- *   <li>Generate — produce an initial answer (native function calling for tools)</li>
- *   <li>Reflect  — critique the answer for accuracy, completeness, and clarity</li>
- *   <li>Refine   — produce an improved answer based on the critique</li>
- * </ol>
- *
- * <p>Construction:
- * <pre>
- *   new ReflectionAgent(llm)
- *   new ReflectionAgent("MyAgent", llm, systemPrompt)
- * </pre>
+ * <p>The Generate phase uses the configured system prompt, conversation history,
+ * and optional tool calling. Reflect and Refine phases use their own fixed system
+ * prompts and do not call tools.
  */
 public class ReflectionAgent extends AbstractAgent {
 
-    private static final String DEFAULT_NAME = "ReflectionAgent";
+    private static final String DEFAULT_NAME              = "ReflectionAgent";
     private static final int    DEFAULT_MAX_TOOL_ITERATIONS = 3;
 
     private static final String DEFAULT_GENERATE_SYSTEM = """
@@ -67,52 +58,64 @@ public class ReflectionAgent extends AbstractAgent {
     }
 
     @Override
-    public String name() {
-        return agentName;
-    }
+    public String name() { return agentName; }
 
-    // --- run / stream --------------------------------------------------------
+    // --- run -----------------------------------------------------------------
 
     @Override
     public String run(String task) {
-        String draft    = generate(task);
+        List<Message> trace = new ArrayList<>();
+        trace.add(Message.user(task));
+
+        String draft    = generate(task, trace);
         String critique = reflect(task, draft);
         String response = llm.chat(refineMessages(task, draft, critique));
+
+        trace.add(Message.assistant(draft));
+        trace.add(Message.assistant(critique));
+        trace.add(Message.assistant(response));
+
         addMessage(Message.user(task));
         addMessage(Message.assistant(response));
+        addExecutionTrace(trace);
         return response;
     }
 
+    // --- stream --------------------------------------------------------------
+
     @Override
     public void stream(String task, Consumer<String> onToken) {
+        List<Message> trace = new ArrayList<>();
+        trace.add(Message.user(task));
+
         onToken.accept("Draft: \n");
-        String draft = streamGenerate(task, onToken);
+        String draft = streamGenerate(task, trace, onToken);
 
         onToken.accept("\n\nCritique: \n");
         StringBuilder critiqueBuf = new StringBuilder();
         llm.stream(List.of(
                 Message.system(REFLECT_SYSTEM),
                 Message.user("Question: %s\n\nDraft answer:\n%s".formatted(task, draft))),
-                token -> {
-                    critiqueBuf.append(token);
-                    onToken.accept(token);
-                });
+                token -> { critiqueBuf.append(token); onToken.accept(token); });
 
         onToken.accept("\n\nFinal Answer: \n");
         StringBuilder refineBuf = new StringBuilder();
-        llm.stream(refineMessages(task, draft, critiqueBuf.toString()), token -> {
-            refineBuf.append(token);
-            onToken.accept(token);
-        });
+        llm.stream(refineMessages(task, draft, critiqueBuf.toString()),
+                token -> { refineBuf.append(token); onToken.accept(token); });
+
+        trace.add(Message.assistant(draft));
+        trace.add(Message.assistant(critiqueBuf.toString()));
+        trace.add(Message.assistant(refineBuf.toString()));
 
         addMessage(Message.user(task));
         addMessage(Message.assistant(refineBuf.toString()));
+        addExecutionTrace(trace);
     }
 
-    // --- generate phase (with native function calling if tools registered) ---
+    // --- generate phase ------------------------------------------------------
 
-    private String generate(String task) {
-        List<Message> messages = List.of(Message.system(systemPrompt), Message.user(task));
+    private String generate(String task, List<Message> trace) {
+        List<Message> messages = buildGenerateMessages(task);
 
         if (!hasTools()) {
             return llm.chat(messages);
@@ -124,16 +127,21 @@ public class ReflectionAgent extends AbstractAgent {
             if (!resp.hasToolCalls()) {
                 return resp.content() != null ? resp.content() : "";
             }
-            history.add(Message.assistantWithToolCalls(resp.toolCalls()));
+            Message toolCallMsg = Message.assistantWithToolCalls(resp.toolCalls());
+            history.add(toolCallMsg);
+            trace.add(toolCallMsg);
             for (FunctionCall call : resp.toolCalls()) {
-                history.add(Message.tool(call.id(), toolRegistry.execute(call.name(), call.parseArguments())));
+                String  result        = toolRegistry.execute(call.name(), call.parseArguments());
+                Message toolResultMsg = Message.tool(call.id(), result);
+                history.add(toolResultMsg);
+                trace.add(toolResultMsg);
             }
         }
         return llm.chat(history);
     }
 
-    private String streamGenerate(String task, Consumer<String> onToken) {
-        List<Message> messages = List.of(Message.system(systemPrompt), Message.user(task));
+    private String streamGenerate(String task, List<Message> trace, Consumer<String> onToken) {
+        List<Message> messages = buildGenerateMessages(task);
 
         if (!hasTools()) {
             StringBuilder buf = new StringBuilder();
@@ -147,18 +155,22 @@ public class ReflectionAgent extends AbstractAgent {
             if (!resp.hasToolCalls()) {
                 return resp.content() != null ? resp.content() : "";
             }
-            history.add(Message.assistantWithToolCalls(resp.toolCalls()));
+            Message toolCallMsg = Message.assistantWithToolCalls(resp.toolCalls());
+            history.add(toolCallMsg);
+            trace.add(toolCallMsg);
             for (FunctionCall call : resp.toolCalls()) {
-                String result = toolRegistry.execute(call.name(), call.parseArguments());
+                String  result        = toolRegistry.execute(call.name(), call.parseArguments());
+                Message toolResultMsg = Message.tool(call.id(), result);
                 onToken.accept("\n[" + call.name() + "] → " + result + "\n");
-                history.add(Message.tool(call.id(), result));
+                history.add(toolResultMsg);
+                trace.add(toolResultMsg);
             }
         }
         LlmResponse resp = llm.stream(history, toolRegistry.getTools(), onToken);
         return resp.content() != null ? resp.content() : "";
     }
 
-    // --- reflect / refine (no tools) ----------------------------------------
+    // --- reflect / refine ----------------------------------------------------
 
     private String reflect(String task, String draft) {
         return llm.chat(List.of(
@@ -178,5 +190,31 @@ public class ReflectionAgent extends AbstractAgent {
                         Critique:
                         %s
                         """.formatted(task, draft, critique)));
+    }
+
+    // --- message building ----------------------------------------------------
+
+    private List<Message> buildGenerateMessages(String task) {
+        List<Message> messages = new ArrayList<>();
+
+        String baseSystem = systemPromptBuilder != null
+                ? systemPromptBuilder.build(task, systemPrompt)
+                : systemPrompt;
+
+        if (compressedHistory != null) {
+            compressedHistory.sync(getHistory());
+            String summary = compressedHistory.getSummary();
+            String system  = summary != null
+                    ? baseSystem + "\n\nConversation summary:\n" + summary
+                    : baseSystem;
+            messages.add(Message.system(system));
+            messages.addAll(compressedHistory.getRecentMessages());
+        } else {
+            messages.add(Message.system(baseSystem));
+            messages.addAll(getHistory());
+        }
+
+        messages.add(Message.user(task));
+        return messages;
     }
 }
