@@ -66,17 +66,14 @@ public final class CompressedHistory {
         maybeCompress();
     }
 
-    /**
-     * Returns the effective history for an LLM call:
-     * {@code [summary_system_msg (if any)]} + {@code [recent messages]}.
-     */
-    public List<Message> toMessages() {
-        List<Message> result = new ArrayList<>();
-        if (summary != null) {
-            result.add(Message.system("Conversation summary:\n" + summary));
-        }
-        result.addAll(recent);
-        return Collections.unmodifiableList(result);
+    /** Returns the current rolling summary text, or {@code null} if no compression has occurred. */
+    public String getSummary() {
+        return summary;
+    }
+
+    /** Returns the recent messages kept verbatim (no summary message included). */
+    public List<Message> getRecentMessages() {
+        return Collections.unmodifiableList(recent);
     }
 
     public void clear() {
