@@ -47,6 +47,25 @@ public interface BaseAgent {
     /** Clears the conversation history. */
     void clearHistory();
 
+    /**
+     * Returns all execution traces, one per {@link #run} call.
+     * Each trace is the full message sequence for that run: user input,
+     * any tool call exchanges, and the final assistant answer.
+     */
+    List<List<Message>> getExecutionTrace();
+
+    /**
+     * Returns the message sequence from the most recent {@link #run},
+     * or an empty list if no runs have been made yet.
+     */
+    default List<Message> getLastExecution() {
+        List<List<Message>> trace = getExecutionTrace();
+        return trace.isEmpty() ? List.of() : trace.get(trace.size() - 1);
+    }
+
+    /** Clears all stored execution traces. */
+    void clearExecutionTrace();
+
     /** Human-readable name for this agent (used in logs and demos). */
     default String name() {
         return getClass().getSimpleName();
