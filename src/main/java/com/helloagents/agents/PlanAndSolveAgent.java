@@ -4,30 +4,22 @@ import com.helloagents.core.AbstractAgent;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
 /**
  * Plan-and-Solve agent.
  *
- * <p>Two-phase approach from <em>Plan-and-Solve Prompting</em> (Wang et al., 2023):
+ * <p>Two-phase approach:
  * <ol>
- *   <li>{@link Planner} — decomposes the task into a numbered list of sub-steps</li>
- *   <li>{@link Solver}  — works through each sub-step and produces the final answer</li>
+ *   <li>{@link Planner} — decomposes the task into ordered sub-steps (no tools)</li>
+ *   <li>{@link Solver}  — executes each step, calling tools where needed</li>
  * </ol>
- * Tools are used during the Solver phase; the Planner always runs without tools.
  *
- * <p>Construction:
- * <pre>
- *   // minimal — planner and solver share the same LLM
- *   new PlanAndSolveAgent(llm)
- *
- *   // with custom name
- *   new PlanAndSolveAgent("MyAgent", llm)
- *
- *   // advanced — separate LLMs for each phase (e.g. cheaper model for planning)
- *   new PlanAndSolveAgent("MyAgent", plannerLlm, solverLlm)
- * </pre>
+ * <p>{@link com.helloagents.context.CompressedHistory} and
+ * {@link com.helloagents.context.SystemPromptBuilder} are held at this layer.
+ * The Solver receives the context-aware system message when building its step prompts.
  */
 public class PlanAndSolveAgent extends AbstractAgent {
 
@@ -54,31 +46,67 @@ public class PlanAndSolveAgent extends AbstractAgent {
     }
 
     @Override
-    public String name() {
-        return agentName;
-    }
+    public String name() { return agentName; }
 
-    // --- run / stream --------------------------------------------------------
+    // --- run -----------------------------------------------------------------
 
     @Override
     public String run(String task) {
-        List<String> steps = planner.plan(task);
-        String response = solver.solve(task, steps, toolRegistry);
+        syncHistory();
+
+        List<Message> trace = new ArrayList<>();
+        trace.add(Message.user(task));
+
+        List<String> steps    = planner.plan(task);
+        String       response = solver.solve(task, steps, toolRegistry);
+
+        trace.add(Message.assistant(formatPlan(steps)));
+        trace.add(Message.assistant(response));
+
         addMessage(Message.user(task));
         addMessage(Message.assistant(response));
+        addExecutionTrace(trace);
         return response;
     }
 
+    // --- stream --------------------------------------------------------------
+
     @Override
     public void stream(String task, Consumer<String> onToken) {
-        List<String> steps = planner.plan(task);
-        StringBuilder buf = new StringBuilder();
+        syncHistory();
+
+        List<Message> trace = new ArrayList<>();
+        trace.add(Message.user(task));
+
+        List<String>  steps = planner.plan(task);
+        StringBuilder buf   = new StringBuilder();
         solver.stream(task, steps, toolRegistry, token -> {
             buf.append(token);
             onToken.accept(token);
         });
+
+        trace.add(Message.assistant(formatPlan(steps)));
+        trace.add(Message.assistant(buf.toString()));
+
         addMessage(Message.user(task));
         addMessage(Message.assistant(buf.toString()));
+        addExecutionTrace(trace);
     }
 
+    // --- helpers -------------------------------------------------------------
+
+    /** Syncs CompressedHistory before each run so it stays current. */
+    private void syncHistory() {
+        if (compressedHistory != null) {
+            compressedHistory.sync(getHistory());
+        }
+    }
+
+    private static String formatPlan(List<String> steps) {
+        StringBuilder sb = new StringBuilder("Plan:\n");
+        for (int i = 0; i < steps.size(); i++) {
+            sb.append(i + 1).append(". ").append(steps.get(i)).append('\n');
+        }
+        return sb.toString();
+    }
 }
