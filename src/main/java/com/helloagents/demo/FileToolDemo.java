@@ -1,7 +1,6 @@
 package com.helloagents.demo;
 
 import com.helloagents.agents.ReActAgent;
-import com.helloagents.llm.Message;
 import com.helloagents.llm.OpenAiClient;
 import com.helloagents.tools.FileReadTool;
 import com.helloagents.tools.FileWriteTool;
@@ -9,7 +8,6 @@ import com.helloagents.tools.FileWriteTool;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -106,34 +104,10 @@ public class FileToolDemo {
         });
         System.out.println("\n");
 
-        printTrace(agent.getLastExecution());
+        agent.printTrace();
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
-
-    private static void printTrace(List<Message> trace) {
-        System.out.println("── Execution Trace ──");
-        for (int i = 0; i < trace.size(); i++) {
-            Message m = trace.get(i);
-            if (!m.toolCalls().isEmpty()) {
-                System.out.printf("[%d] assistant → %s%n", i,
-                        m.toolCalls().stream()
-                                .map(c -> c.name() + "(" + c.arguments() + ")")
-                                .toList());
-            } else if ("tool".equals(m.role())) {
-                String preview = m.content() != null && m.content().length() > 100
-                        ? m.content().substring(0, 100) + "..."
-                        : m.content();
-                System.out.printf("[%d] tool      → %s%n", i, preview);
-            } else {
-                String preview = m.content() != null && m.content().length() > 80
-                        ? m.content().substring(0, 80) + "..."
-                        : m.content();
-                System.out.printf("[%d] %-10s → %s%n", i, m.role(), preview);
-            }
-        }
-        System.out.println();
-    }
 
     private static void printHeader(String title) {
         System.out.println("=".repeat(60));

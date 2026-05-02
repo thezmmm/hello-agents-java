@@ -107,4 +107,35 @@ public abstract class AbstractAgent implements BaseAgent, ToolSupport {
     public ToolRegistry getToolRegistry() {
         return toolRegistry;
     }
+
+    // ── Trace printing ────────────────────────────────────────────────────────
+
+    /** Prints the most recent execution trace to stdout. */
+    public void printTrace() {
+        printTrace(getLastExecution());
+    }
+
+    /** Prints the given execution trace to stdout. */
+    public void printTrace(List<Message> trace) {
+        System.out.println("── Execution Trace ──");
+        for (int i = 0; i < trace.size(); i++) {
+            Message m = trace.get(i);
+            if (!m.toolCalls().isEmpty()) {
+                System.out.printf("[%d] assistant → %s%n", i,
+                        m.toolCalls().stream()
+                                .map(c -> c.name() + "(" + c.arguments() + ")")
+                                .toList());
+            } else if ("tool".equals(m.role())) {
+                System.out.printf("[%d] tool      → %s%n", i, preview(m.content(), 100));
+            } else {
+                System.out.printf("[%d] %-10s → %s%n", i, m.role(), preview(m.content(), 80));
+            }
+        }
+        System.out.println();
+    }
+
+    private static String preview(String text, int maxLen) {
+        if (text == null) return "(null)";
+        return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
+    }
 }
