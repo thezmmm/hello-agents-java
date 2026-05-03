@@ -170,7 +170,7 @@ public class ReActAgent extends AbstractAgent {
                 result = hasTools()
                         ? toolRegistry.execute(call.name(), call.parseArguments())
                         : "Error: no tools registered.";
-                if (onToken != null) onToken.accept("\n[" + call.name() + "] → " + result + "\n");
+                if (onToken != null) onToken.accept("\n[" + call.name() + "] " + formatArgs(call.parseArguments()) + "\n");
             }
             Message toolResultMsg = Message.tool(call.id(), result);
             messages.add(toolResultMsg);
@@ -208,5 +208,16 @@ public class ReActAgent extends AbstractAgent {
         if (hasTools()) tools.addAll(toolRegistry.getTools());
         tools.add(FINISH_TOOL);
         return tools;
+    }
+
+    private static String formatArgs(Map<String, String> args) {
+        if (args.isEmpty()) return "";
+        var sb = new StringBuilder();
+        args.forEach((k, v) -> {
+            if (!sb.isEmpty()) sb.append(", ");
+            String display = v.length() > 80 ? v.substring(0, 80) + "…" : v;
+            sb.append(k).append('=').append(display);
+        });
+        return sb.toString();
     }
 }
