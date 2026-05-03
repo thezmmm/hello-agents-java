@@ -11,10 +11,22 @@ import java.util.Map;
  *
  * <p>File content is truncated to {@value #MAX_CONTENT_CHARS} characters to avoid
  * overflowing the LLM context window.
+ *
+ * <p>If constructed with a workspace path, reads outside the workspace are rejected.
  */
 public class FileReadTool implements Tool {
 
     private static final int MAX_CONTENT_CHARS = 8000;
+
+    private final Path workspace;
+
+    public FileReadTool() {
+        this.workspace = null;
+    }
+
+    public FileReadTool(Path workspace) {
+        this.workspace = workspace.toAbsolutePath().normalize();
+    }
 
     @Override
     public String name() {
@@ -47,6 +59,10 @@ public class FileReadTool implements Tool {
             target = Path.of(rawPath).toAbsolutePath().normalize();
         } catch (InvalidPathException e) {
             return "Error: invalid path — " + e.getMessage();
+        }
+
+        if (workspace != null && !target.startsWith(workspace)) {
+            return "Error: path is outside the workspace — " + target;
         }
 
         if (!Files.exists(target)) {

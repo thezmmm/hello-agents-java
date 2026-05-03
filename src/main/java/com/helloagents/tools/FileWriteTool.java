@@ -18,10 +18,22 @@ import java.util.Set;
  * </ul>
  *
  * <p>Parent directories are created automatically if they do not exist.
+ *
+ * <p>If constructed with a workspace path, writes outside the workspace are rejected.
  */
 public class FileWriteTool implements Tool {
 
     private static final Set<String> VALID_MODES = Set.of("overwrite", "append");
+
+    private final Path workspace;
+
+    public FileWriteTool() {
+        this.workspace = null;
+    }
+
+    public FileWriteTool(Path workspace) {
+        this.workspace = workspace.toAbsolutePath().normalize();
+    }
 
     @Override
     public String name() {
@@ -68,6 +80,10 @@ public class FileWriteTool implements Tool {
             target = Path.of(rawPath).toAbsolutePath().normalize();
         } catch (InvalidPathException e) {
             return "Error: invalid path — " + e.getMessage();
+        }
+
+        if (workspace != null && !target.startsWith(workspace)) {
+            return "Error: path is outside the workspace — " + target;
         }
 
         try {
