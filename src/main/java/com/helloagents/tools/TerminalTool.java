@@ -152,6 +152,9 @@ public class TerminalTool implements Tool {
     /** Workspace root this tool is confined to. */
     public Path workspace()  { return workspace; }
 
+    /** Resets the working directory back to the workspace root. */
+    public void reset()      { currentDir = workspace; }
+
     // ── cd logic ──────────────────────────────────────────────────────────────
 
     private String handleCd(String target) {
