@@ -1,6 +1,6 @@
 package com.helloagents.mcp;
 
-import com.helloagents.tools.CalculatorTool;
+import com.helloagents.tools.builtin.CalculatorTool;
 import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolParameter;
 import io.modelcontextprotocol.server.McpServerFeatures;

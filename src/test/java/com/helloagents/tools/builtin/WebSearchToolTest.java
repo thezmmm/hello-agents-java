@@ -1,4 +1,4 @@
-package com.helloagents.tools;
+package com.helloagents.tools.builtin;
 
 import org.junit.jupiter.api.Test;
 

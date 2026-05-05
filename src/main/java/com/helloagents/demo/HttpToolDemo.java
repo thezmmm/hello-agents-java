@@ -2,8 +2,8 @@ package com.helloagents.demo;
 
 import com.helloagents.agents.ReActAgent;
 import com.helloagents.llm.OpenAiClient;
-import com.helloagents.tools.HttpTool;
-import com.helloagents.tools.WebSearchTool;
+import com.helloagents.tools.builtin.HttpTool;
+import com.helloagents.tools.builtin.WebSearchTool;
 
 import java.time.LocalDate;
 import java.util.Map;

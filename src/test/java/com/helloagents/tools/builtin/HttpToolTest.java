@@ -1,4 +1,4 @@
-package com.helloagents.tools;
+package com.helloagents.tools.builtin;
 
 import org.junit.jupiter.api.Test;
 
@@ -167,10 +167,10 @@ class HttpToolTest {
 
     @Test
     void longResponseIsTruncated() {
-        String longBody = "x".repeat(3000);
+        String longBody = "x".repeat(9000);
         String result = mockTool("[HTTP 200]\n" + longBody).execute(Map.of("url", "https://example.com"));
         assertTrue(result.contains("[... truncated"), "Response should mention truncation");
-        assertTrue(result.length() <= 2100, "Truncated response should not be much longer than 2000 chars");
+        assertTrue(result.length() <= 8500, "Truncated response should not be much longer than 8000 chars");
     }
 
     @Test

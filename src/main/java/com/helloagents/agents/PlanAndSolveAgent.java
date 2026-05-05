@@ -1,6 +1,6 @@
 package com.helloagents.agents;
 
-import com.helloagents.core.AbstractAgent;
+import com.helloagents.agents.core.AbstractAgent;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.Message;
 

@@ -1,7 +1,9 @@
-package com.helloagents.tools;
+package com.helloagents.tools.builtin;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.helloagents.tools.Tool;
+import com.helloagents.tools.ToolParameter;
 import io.github.cdimascio.dotenv.Dotenv;
 
 import java.io.IOException;

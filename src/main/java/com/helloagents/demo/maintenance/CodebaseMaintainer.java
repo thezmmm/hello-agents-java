@@ -11,9 +11,9 @@ import com.helloagents.memory.MemoryManager;
 import com.helloagents.memory.MemoryService;
 import com.helloagents.memory.store.MarkdownMemoryStore;
 import com.helloagents.memory.tool.MemoryToolkit;
-import com.helloagents.tools.FileReadTool;
-import com.helloagents.tools.FileWriteTool;
-import com.helloagents.tools.TerminalTool;
+import com.helloagents.tools.builtin.FileReadTool;
+import com.helloagents.tools.builtin.FileWriteTool;
+import com.helloagents.tools.builtin.TerminalTool;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

@@ -1,4 +1,4 @@
-package com.helloagents.core;
+package com.helloagents.agents.core;
 
 import com.helloagents.llm.Message;
 

@@ -1,6 +1,6 @@
 package com.helloagents.mcp;
 
-import com.helloagents.tools.CalculatorTool;
+import com.helloagents.tools.builtin.CalculatorTool;
 
 /**
  * Subprocess entry point used by {@link McpTest} to start an in-process MCP server.

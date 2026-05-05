@@ -2,8 +2,8 @@ package com.helloagents.demo;
 
 import com.helloagents.agents.ReActAgent;
 import com.helloagents.llm.OpenAiClient;
-import com.helloagents.tools.FileReadTool;
-import com.helloagents.tools.FileWriteTool;
+import com.helloagents.tools.builtin.FileReadTool;
+import com.helloagents.tools.builtin.FileWriteTool;
 
 import java.io.IOException;
 import java.nio.file.Files;

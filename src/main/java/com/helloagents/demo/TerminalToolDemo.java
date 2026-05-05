@@ -2,7 +2,7 @@ package com.helloagents.demo;
 
 import com.helloagents.agents.ReActAgent;
 import com.helloagents.llm.OpenAiClient;
-import com.helloagents.tools.TerminalTool;
+import com.helloagents.tools.builtin.TerminalTool;
 
 import java.io.IOException;
 import java.nio.file.Files;

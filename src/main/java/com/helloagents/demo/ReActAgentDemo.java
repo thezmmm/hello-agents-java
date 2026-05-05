@@ -3,7 +3,7 @@ package com.helloagents.demo;
 import com.helloagents.agents.ReActAgent;
 import com.helloagents.llm.Message;
 import com.helloagents.llm.OpenAiClient;
-import com.helloagents.tools.CalculatorTool;
+import com.helloagents.tools.builtin.CalculatorTool;
 
 import java.util.List;
 

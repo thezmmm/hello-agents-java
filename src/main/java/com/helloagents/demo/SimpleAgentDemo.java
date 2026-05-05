@@ -6,9 +6,9 @@ import com.helloagents.context.ContextConfig;
 import com.helloagents.context.SystemPromptBuilder;
 import com.helloagents.llm.Message;
 import com.helloagents.llm.OpenAiClient;
-import com.helloagents.tools.CalculatorTool;
 import com.helloagents.tools.ToolParameter;
 import com.helloagents.tools.ToolRegistry;
+import com.helloagents.tools.builtin.CalculatorTool;
 
 import java.util.List;
 

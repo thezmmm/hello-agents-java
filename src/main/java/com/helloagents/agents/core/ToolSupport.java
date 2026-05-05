@@ -1,4 +1,4 @@
-package com.helloagents.core;
+package com.helloagents.agents.core;
 
 import com.helloagents.tools.Tool;
 import com.helloagents.tools.ToolRegistry;

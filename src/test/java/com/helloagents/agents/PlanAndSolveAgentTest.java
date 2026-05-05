@@ -4,7 +4,7 @@ import com.helloagents.context.CompressedHistory;
 import com.helloagents.llm.LlmClient;
 import com.helloagents.llm.LlmResponse;
 import com.helloagents.llm.Message;
-import com.helloagents.tools.CalculatorTool;
+import com.helloagents.tools.builtin.CalculatorTool;
 import com.helloagents.tools.Tool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -1,4 +1,7 @@
-package com.helloagents.tools;
+package com.helloagents.tools.builtin;
+
+import com.helloagents.tools.Tool;
+import com.helloagents.tools.ToolParameter;
 
 import java.util.Map;
 

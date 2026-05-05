@@ -1,5 +1,6 @@
-package com.helloagents.tools;
+package com.helloagents.tools.builtin;
 
+import com.helloagents.tools.ToolRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;

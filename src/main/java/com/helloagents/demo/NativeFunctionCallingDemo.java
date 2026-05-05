@@ -3,7 +3,7 @@ package com.helloagents.demo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.helloagents.llm.LlmConfig;
-import com.helloagents.tools.CalculatorTool;
+import com.helloagents.tools.builtin.CalculatorTool;
 
 import java.net.URI;
 import java.net.http.HttpClient;

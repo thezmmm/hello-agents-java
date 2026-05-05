@@ -1,7 +1,9 @@
-package com.helloagents.tools;
+package com.helloagents.tools.builtin;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.helloagents.tools.Tool;
+import com.helloagents.tools.ToolParameter;
 
 import java.io.IOException;
 import java.net.URI;
@@ -111,7 +113,7 @@ public class HttpTool implements Tool {
     public String description() {
         return """
                 Fetch the full content of a specific URL and return the response body \
-                (truncated to 2000 characters). \
+                (truncated to 8000 characters). \
                 Best suited for JSON APIs and plain-text pages; HTML pages may contain noisy markup. \
                 Use this tool when: \
                 (1) you found a URL via web_search and the snippet is too short to answer the question; \
