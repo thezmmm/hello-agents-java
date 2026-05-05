@@ -17,6 +17,11 @@ public interface ToolSupport {
     /** Registers a tool with this agent. */
     void addTool(Tool tool);
 
+    /** Registers all tools in the list. */
+    default void addTool(List<Tool> tools) {
+        tools.forEach(this::addTool);
+    }
+
     /** Returns {@code true} if at least one tool is registered. */
     boolean hasTools();
 
