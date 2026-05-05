@@ -43,9 +43,14 @@ import java.util.*;
  */
 public class CodebaseMaintainer {
 
-    private static final String SYSTEM_PROMPT = """
+    private static final int DEFAULT_MAX_STEPS = 20;
+
+    private static String buildSystemPrompt(Path workspace) {
+        return """
             You are an experienced Java codebase maintenance engineer. Your role is to help
             analyze, review, and improve Java codebases through careful exploration and targeted edits.
+
+            Workspace: %s
 
             Core capabilities:
             - Code quality review: identify smells, anti-patterns, and duplication
@@ -56,7 +61,7 @@ public class CodebaseMaintainer {
             - Dependency analysis: trace how classes and methods relate
 
             Workflow rules:
-            1. Explore directory structure first (terminal: ls, find, tree)
+            1. You already know the workspace root — start exploring immediately (terminal: ls, find, tree)
             2. Read files before commenting on their content (file_read)
             3. Explain proposed changes before writing them (file_write)
             4. Preserve existing indentation and code style when editing
@@ -71,33 +76,32 @@ public class CodebaseMaintainer {
             When you have a final answer or have completed the task, call the `finish` tool.
             Your finish answer must summarize: what you explored, what you found, and what files
             you modified (if any). This summary is the only context available to future tasks.
-            """;
+            """.formatted(workspace);
+    }
 
     // ── Session statistics ────────────────────────────────────────────────────
 
-    /**
-     * Immutable-by-reference record tracking mutable session state.
-     * The List and Set fields are intentionally mutable to allow incremental recording.
-     */
-    record SessionStats(Instant startTime, List<String> completedTasks, Set<String> modifiedFiles) {
+    static final class SessionStats {
+        private final Instant startTime = Instant.now();
+        private final List<String> completedTasks = new ArrayList<>();
+        private final List<String> failedTasks    = new ArrayList<>();
+        private final Set<String>  modifiedFiles  = new LinkedHashSet<>();
 
-        static SessionStats create() {
-            return new SessionStats(Instant.now(), new ArrayList<>(), new LinkedHashSet<>());
-        }
+        void recordTask(String task)          { completedTasks.add(task); }
+        void recordFailure(String task)       { failedTasks.add(task); }
+        void recordFile(String filePath)      { modifiedFiles.add(filePath); }
 
-        void recordTask(String task)     { completedTasks.add(task); }
-        void recordFile(String filePath) { modifiedFiles.add(filePath); }
+        List<String> completedTasks() { return Collections.unmodifiableList(completedTasks); }
+        List<String> failedTasks()    { return Collections.unmodifiableList(failedTasks); }
+        Set<String>  modifiedFiles()  { return Collections.unmodifiableSet(modifiedFiles); }
 
-        Duration elapsed() {
-            return Duration.between(startTime, Instant.now());
-        }
+        Duration elapsed() { return Duration.between(startTime, Instant.now()); }
     }
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
     public static void main(String[] args) {
         Path workspace = resolveWorkspace(args);
-        printWelcome(workspace);
 
         var llm        = OpenAiClient.fromEnv();
         var history    = new CompressedHistory(llm);
@@ -105,9 +109,10 @@ public class CodebaseMaintainer {
         var memToolkit = buildMemoryToolkit(workspace);
         var spBuilder  = new SystemPromptBuilder(ContextConfig.defaults())
                              .withMemory(memToolkit.getService());
-        var agent      = buildAgent(llm, history, workspace, termTool, memToolkit, spBuilder);
-        var stats      = SessionStats.create();
-
+        int maxSteps   = Integer.getInteger("codebase.steps", DEFAULT_MAX_STEPS);
+        var agent      = buildAgent(llm, history, workspace, termTool, memToolkit, spBuilder, maxSteps);
+        var stats      = new SessionStats();
+        printWelcome(workspace, agent.listTools());
         runInteractiveLoop(agent, termTool, stats);
         printSessionSummary(stats);
     }
@@ -124,8 +129,9 @@ public class CodebaseMaintainer {
 
     private static ReActAgent buildAgent(OpenAiClient llm, CompressedHistory history,
                                          Path workspace, TerminalTool termTool,
-                                         MemoryToolkit memToolkit, SystemPromptBuilder spBuilder) {
-        var agent = new ReActAgent("MaintenanceAgent", llm, SYSTEM_PROMPT, 20);
+                                         MemoryToolkit memToolkit, SystemPromptBuilder spBuilder,
+                                         int maxSteps) {
+        var agent = new ReActAgent("MaintenanceAgent", llm, buildSystemPrompt(workspace), maxSteps);
         agent.withCompressedHistory(history);
         agent.withSystemPromptBuilder(spBuilder);
         agent.addTool(termTool);
@@ -153,13 +159,14 @@ public class CodebaseMaintainer {
             if (input.startsWith("/")) {
                 if (!handleCommand(input, agent, stats)) break;
             } else {
-                termTool.reset();
-                executeTask(input, agent, stats);
+                executeTask(input, agent, termTool, stats);
             }
         }
     }
 
-    private static void executeTask(String input, ReActAgent agent, SessionStats stats) {
+    private static void executeTask(String input, ReActAgent agent,
+                                    TerminalTool termTool, SessionStats stats) {
+        termTool.reset();  // each task starts from the workspace root
         System.out.println();
         try {
             agent.stream(input, token -> {
@@ -171,6 +178,7 @@ public class CodebaseMaintainer {
             scanForModifiedFiles(agent, stats);
         } catch (Exception e) {
             System.err.println("[Error] " + e.getMessage());
+            stats.recordFailure(input);
         }
     }
 
@@ -219,12 +227,12 @@ public class CodebaseMaintainer {
 
     // ── Display helpers ───────────────────────────────────────────────────────
 
-    private static void printWelcome(Path workspace) {
+    private static void printWelcome(Path workspace, List<String> tools) {
         System.out.println("╔══════════════════════════════════════════════════════╗");
         System.out.println("║    长程代码库维护助手  Maintenance Agent                ║");
         System.out.println("╚══════════════════════════════════════════════════════╝");
         System.out.println("Workspace : " + workspace);
-        System.out.println("Tools     : terminal (sandbox), file_read, file_write, memory (persistent)");
+        System.out.println("Tools     : " + String.join(", ", tools));
         System.out.println("Context   : CompressedHistory + SystemPromptBuilder (memory index auto-injected)");
         System.out.println("Max steps : 20 per task");
         System.out.println();
@@ -235,6 +243,7 @@ public class CodebaseMaintainer {
         System.out.println("── Session Status ──────────────────────────────────────");
         System.out.printf("  Elapsed      : %dm %02ds%n", d.toMinutes(), d.toSecondsPart());
         System.out.printf("  Tasks done   : %d%n", stats.completedTasks().size());
+        System.out.printf("  Tasks failed : %d%n", stats.failedTasks().size());
         System.out.printf("  History msgs : %d%n", agent.getHistory().size());
         System.out.println("  Files modified:");
         if (stats.modifiedFiles().isEmpty()) {
@@ -253,10 +262,15 @@ public class CodebaseMaintainer {
         System.out.println("╚══════════════════════════════════════════════════════╝");
         System.out.printf("  Duration     : %dm %02ds%n", d.toMinutes(), d.toSecondsPart());
         System.out.printf("  Tasks done   : %d%n", stats.completedTasks().size());
+        System.out.printf("  Tasks failed : %d%n", stats.failedTasks().size());
         System.out.printf("  Files touched: %d%n", stats.modifiedFiles().size());
         if (!stats.completedTasks().isEmpty()) {
             System.out.println("  Tasks:");
             stats.completedTasks().forEach(t -> System.out.println("    * " + preview(t, 70)));
+        }
+        if (!stats.failedTasks().isEmpty()) {
+            System.out.println("  Failed tasks:");
+            stats.failedTasks().forEach(t -> System.out.println("    ! " + preview(t, 70)));
         }
         if (!stats.modifiedFiles().isEmpty()) {
             System.out.println("  Modified files:");
@@ -308,17 +322,31 @@ public class CodebaseMaintainer {
     }
 
     /**
-     * Scans the last execution trace for {@code file_write} tool calls
+     * Scans the last execution trace for successful {@code file_write} calls
      * and records the target paths in {@code stats}.
+     *
+     * <p>A write is considered successful when the corresponding tool result message
+     * starts with {@code "OK:"} — matching {@link FileWriteTool}'s success prefix.
      */
     private static void scanForModifiedFiles(ReActAgent agent, SessionStats stats) {
         var trace = agent.getLastExecution();
         if (trace == null) return;
+
+        // Build a map from tool-call-id → path for every file_write call
+        Map<String, String> pendingWrites = new LinkedHashMap<>();
         for (Message m : trace) {
             for (FunctionCall call : m.toolCalls()) {
                 if (!"file_write".equals(call.name())) continue;
                 String path = call.parseArguments().get("path");
-                if (path != null && !path.isBlank()) stats.recordFile(path);
+                if (path != null && !path.isBlank()) {
+                    pendingWrites.put(call.id(), path);
+                }
+            }
+            // Confirm writes whose tool result starts with "OK:"
+            if ("tool".equals(m.role()) && m.content() != null
+                    && m.content().startsWith("OK:")
+                    && pendingWrites.containsKey(m.toolCallId())) {
+                stats.recordFile(pendingWrites.remove(m.toolCallId()));
             }
         }
     }
