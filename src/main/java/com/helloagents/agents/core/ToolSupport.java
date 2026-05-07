@@ -22,6 +22,11 @@ public interface ToolSupport {
         tools.forEach(this::addTool);
     }
 
+    /** Registers the first tool with the given name from the list, if present. */
+    default void addToolByName(List<Tool> tools, String name) {
+        tools.stream().filter(t -> name.equals(t.name())).findFirst().ifPresent(this::addTool);
+    }
+
     /** Returns {@code true} if at least one tool is registered. */
     boolean hasTools();
 
