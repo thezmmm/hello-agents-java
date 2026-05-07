@@ -11,10 +11,17 @@ target/
 # Environment / secrets
 .env
 *.env.local
+src/main/resources/application-local.properties
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Frontend
+travel-frontend/node_modules/
+travel-frontend/dist/
+src/main/java/com/helloagents/demo/travel/travel-frontend/node_modules/
+src/main/java/com/helloagents/demo/travel/travel-frontend/dist/
 
 # Agent memory
 .memory/

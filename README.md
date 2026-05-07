@@ -28,6 +28,8 @@
 | Java | 17 | records、sealed class、text blocks |
 | Maven | 3.x | 构建工具 |
 | openai-java | 2.1.0 | 官方 OpenAI Java SDK |
+| MCP Java SDK | 0.9.0 | Model Context Protocol 客户端/服务端 |
+| Spring Boot | 3.3.5 | Web 服务（Travel Demo） |
 | jackson-databind | 2.17.1 | JSON 序列化 |
 | Apache Tika | 2.9.2 | 文档解析（PDF、Office、HTML 等） |
 | dotenv-java | 3.0.0 | 本地 `.env` 配置加载 |
@@ -79,6 +81,11 @@ hello-agents-java/
 │   │   ├── pipeline/            # 索引管道 & 查询管道
 │   │   ├── app/                 # RagSystem 门面
 │   │   └── tool/                # 3 个 RAG 工具
+│   ├── mcp/               # MCP 客户端/服务端
+│   │   ├── McpClientConnector   # 连接外部 MCP server，将其工具注入 Agent
+│   │   ├── McpRemoteTool        # MCP 工具的 Tool 接口适配
+│   │   ├── McpToolAdapter       # 将 Tool 转换为 MCP 工具规范（用于搭建 server）
+│   │   └── AgentMcpServer       # 将 Agent 发布为 MCP server
 │   └── demo/              # Demo 入口
 ├── docs/                  # 学习笔记与改造规划
 ├── .env.example           # 环境变量模板
@@ -119,7 +126,27 @@ mvn exec:java -Dexec.mainClass="com.helloagents.demo.ReActAgentDemo"
 mvn exec:java -Dexec.mainClass="com.helloagents.demo.ReflectionAgentDemo"
 mvn exec:java -Dexec.mainClass="com.helloagents.demo.PlanAndSolveAgentDemo"
 mvn exec:java -Dexec.mainClass="com.helloagents.demo.RagDemo"
+mvn exec:java -Dexec.mainClass="com.helloagents.demo.mcp.McpDemo"
 ```
+
+### 4. 运行旅行助手（全栈 Demo）
+
+需额外安装 Node.js 并申请 [高德地图 API Key](https://lbs.amap.com)。
+
+```bash
+export AMAP_MAPS_API_KEY=your_key
+
+# 后端
+mvn exec:java \
+  -Dexec.mainClass="com.helloagents.demo.travel.TravelAssistantApp" \
+  -Dspring.profiles.active=local
+
+# 前端（新终端）
+cd src/main/java/com/helloagents/demo/travel/travel-frontend
+npm install && npm run dev
+```
+
+访问 http://localhost:5173
 
 ### 4. 运行测试
 
@@ -365,6 +392,41 @@ ragToolkit.getTools().forEach(agent::addTool);
 
 ---
 
+## MCP 支持
+
+`mcp/` 包实现了完整的 MCP 客户端与服务端能力。
+
+### 作为客户端：接入外部 MCP Server
+
+```java
+// 连接任意 MCP server（以高德地图为例）
+try (McpClientConnector mcp = McpClientConnector.stdio(
+        "npx", Map.of("AMAP_MAPS_API_KEY", key), "-y", "@amap/amap-maps-mcp-server")) {
+
+    List<Tool> amapTools = mcp.listTools();  // 获取全部工具
+
+    ReActAgent agent = new ReActAgent(llm);
+    amapTools.forEach(agent::addTool);       // 注入 Agent，由 LLM 驱动调用
+
+    agent.run("帮我查一下北京明天的天气");
+}
+```
+
+### 作为服务端：将 Agent 发布为 MCP Server
+
+```java
+// 将一个 Agent 及其工具发布为可被其他 MCP 客户端调用的 server
+AgentMcpServer.builder()
+    .agent(myAgent)
+    .tool(new CalculatorTool())
+    .build()
+    .run();
+```
+
+更多用法见 `demo/mcp/McpDemo.java`。
+
+---
+
 ## Demo 列表
 
 | Demo | 入口类 | 演示内容 |
@@ -374,6 +436,8 @@ ragToolkit.getTools().forEach(agent::addTool);
 | Reflection | `ReflectionAgentDemo` | 三阶段自我改进流程 |
 | PlanAndSolve | `PlanAndSolveAgentDemo` | 任务规划与分步执行 |
 | RAG | `RagDemo` | 文档索引、语义检索、Agent 集成 |
+| MCP | `McpDemo` | 连接外部 MCP server、直接调用工具、Agent 集成 MCP 工具 |
+| 旅行助手 | `TravelAssistantApp` | 多 Agent + 高德地图 MCP 的全栈旅行规划（Spring Boot + React） |
 
 ---
 
