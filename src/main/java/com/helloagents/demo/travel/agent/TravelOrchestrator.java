@@ -129,14 +129,17 @@ public class TravelOrchestrator {
     private String buildPlanTask(TravelRequest req, long days,
                                   String attractionInfo, String weatherInfo, String hotelInfo) {
         return """
-                请根据以下各专家收集的信息，为用户规划 %d 天的完整旅行计划：
+                请根据以下各专家收集的信息，为用户规划完整旅行计划：
 
                 【用户原始需求】
                 - 目的地：%s
                 - 出发日期：%s
-                - 返回日期：%s
+                - 结束日期：%s
                 - 住宿偏好：%s
                 - 个人偏好：%s
+
+                【行程日期（共 %d 天，每天都需安排景点）】
+                %s
 
                 【景点搜索专家的报告】
                 %s
@@ -147,12 +150,12 @@ public class TravelOrchestrator {
                 【酒店推荐专家的报告】
                 %s
 
-                请整合以上信息，生成完整的 JSON 旅行计划。days 数组必须包含完整的 %d 天，每天安排 2-3 个不重复的景点。
+                请整合以上信息，生成完整的 JSON 旅行计划。days 数组必须严格对应上方列出的 %d 个日期，每天安排 2-3 个不重复的景点。
                 """.formatted(
-                days,
                 req.destination(), req.startDate(), req.endDate(),
                 req.hotelPreference() != null ? req.hotelPreference() : "舒适型",
                 req.preferences()     != null ? req.preferences()     : "无特殊要求",
+                days, buildDateList(req.startDate(), req.endDate()),
                 attractionInfo, weatherInfo, hotelInfo,
                 days
         );
@@ -160,11 +163,25 @@ public class TravelOrchestrator {
 
     private static long calculateDays(String startDate, String endDate) {
         try {
+            // inclusive of both start and end dates
             return Math.max(1, ChronoUnit.DAYS.between(
-                    LocalDate.parse(startDate), LocalDate.parse(endDate)));
+                    LocalDate.parse(startDate), LocalDate.parse(endDate)) + 1);
         } catch (Exception e) {
             return 3;
         }
+    }
+
+    private static String buildDateList(String startDate, String endDate) {
+        LocalDate start = LocalDate.parse(startDate);
+        LocalDate end   = LocalDate.parse(endDate);
+        StringBuilder sb = new StringBuilder();
+        int day = 1;
+        for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+            if (day > 1) sb.append("、");
+            sb.append(d).append("（第").append(day).append("天）");
+            day++;
+        }
+        return sb.toString();
     }
 
     private static String preview(String text, int maxLen) {

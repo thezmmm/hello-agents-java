@@ -19,18 +19,19 @@ A Java implementation of Hello-Agents — rebuild AI-native agent demos from scr
 hello-agents-java/
 ├── src/
 │   ├── main/java/com/helloagents/
-│   │   ├── core/          # Agent 核心抽象（BaseAgent 接口/抽象类）
-│   │   ├── agents/        # 各类 Agent 实现
-│   │   │   ├── SimpleAgent.java
-│   │   │   ├── ReActAgent.java
-│   │   │   ├── ReflectionAgent.java
-│   │   │   └── PlanAndSolveAgent.java
+│   │   ├── agents/        # Agent 实现（SimpleAgent、ReActAgent、ReflectionAgent、PlanAndSolveAgent）
+│   │   │   └── core/      # BaseAgent 接口、AbstractAgent、ToolSupport
 │   │   ├── llm/           # LLM 调用封装（OpenAI / Anthropic）
-│   │   ├── tools/         # 工具定义与执行
-│   │   ├── memory/        # 记忆模块
-│   │   └── demo/          # 各章节 Demo 入口
+│   │   ├── tools/         # Tool 接口、ToolRegistry、6 个内置工具
+│   │   ├── memory/        # 记忆模块（4 种类型、InMemory/Markdown 存储）
+│   │   ├── rag/           # RAG 系统（解析、切分、向量检索）
+│   │   ├── mcp/           # Model Context Protocol 客户端/服务端
+│   │   ├── context/       # 对话压缩、动态 system prompt
+│   │   └── demo/          # 各 Agent 模式 Demo 入口
+│   │       ├── travel/    # 多 Agent 旅行规划（Spring Boot + React 前端）
+│   │       ├── maintenance/ # 代码库维护 Agent
+│   │       └── mcp/       # MCP 示例
 │   └── test/
-├── docs/                  # 对应 hello-agents 章节的学习笔记
 ├── pom.xml
 └── CLAUDE.md
 ```

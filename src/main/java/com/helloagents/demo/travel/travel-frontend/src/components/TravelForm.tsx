@@ -17,6 +17,12 @@ const PREFERENCE_TAGS = ['历史文化', '自然风光', '美食探索', '网红
 
 const today = new Date().toISOString().split('T')[0]
 
+function nextDay(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().split('T')[0]
+}
+
 export default function TravelForm({ onSubmit, loading, onCancel }: Props) {
   const [form, setForm] = useState<TravelRequest>({
     destination: '',
@@ -80,11 +86,11 @@ export default function TravelForm({ onSubmit, loading, onCancel }: Props) {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-600 mb-1">返回日期</label>
+          <label className="block text-sm font-medium text-slate-600 mb-1">结束日期</label>
           <input
             type="date"
             value={form.endDate}
-            min={form.startDate || today}
+            min={form.startDate ? nextDay(form.startDate) : today}
             onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             required
